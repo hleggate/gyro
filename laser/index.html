@@ -34,6 +34,7 @@
   .row label { font-size:14px; min-width:62px; }
   .row output { font-size:13px; color:var(--dim); min-width:92px; text-align:right; font-variant-numeric:tabular-nums; }
   input[type=range] { flex:1; accent-color:var(--acc); height:28px; }
+  input[type=range]:disabled { opacity:.35; }
   button { appearance:none; border:1px solid var(--line); background:#151927; color:var(--fg);
     font:inherit; font-size:14px; padding:9px 12px; border-radius:11px; }
   button:active { transform:scale(.96); }
@@ -78,6 +79,15 @@
   <div class="row" id="freeRow2" hidden>
     <label>Spot Ø</label>
     <div class="seg" id="spots"></div>
+  </div>
+  <div class="row">
+    <label>Beam</label>
+    <div class="seg"><button id="bGauss" class="on">Gaussian</button><button id="bTop">Top hat</button></div>
+  </div>
+  <div class="row">
+    <label for="gdd">GDD</label>
+    <input id="gdd" type="range" min="-1" max="1" step="0.002" value="0">
+    <output id="gddOut"></output>
   </div>
   <div class="row">
     <label for="flu">Fluence</label>
@@ -134,6 +144,9 @@
 
   let lvl, laser, w0, work = LZ.makeWork(VIEW_W, DX, DEPTH);
   let F0 = 2, aimX = XC, firing = false, pointerId = null;
+  let shape = 'gauss', gdd = 0;
+  const opts = () => ({ shape, gdd });
+  const curBeam = () => LZ.beam(laser, w0, F0, opts());
   const particles = [];
 
   // ---------- layout ----------
@@ -156,10 +169,34 @@
   const sliderFromFlu = F => Math.log(F / F_MIN) / Math.log(F_MAX / F_MIN);
   function updFlu() {
     F0 = fluFromSlider(+$('flu').value);
-    const J = F0 * LZ.LASERS[laser].Fth;
+    const J = curBeam().Jpeak;
     $('fluOut').textContent = `${J < 1 ? J.toFixed(2) : J.toFixed(1)} J/cm²`;
   }
   $('flu').oninput = updFlu;
+
+  // Beam shaping: same pulse energy, flatter profile, lower peak
+  function setShape(sh) {
+    shape = sh; $('bGauss').classList.toggle('on', sh === 'gauss'); $('bTop').classList.toggle('on', sh === 'tophat');
+    updFlu();
+  }
+  $('bGauss').onclick = () => setShape('gauss');
+  $('bTop').onclick = () => setShape('tophat');
+
+  // GDD slider: signed, logarithmic, with a dead zone at zero (transform-limited)
+  const G_MIN = 0.02, G_MAX = 100, G_DEAD = 0.06;
+  function gddFromSlider(v) {
+    const a = Math.abs(v); if (a < G_DEAD) return 0;
+    return Math.sign(v) * G_MIN * Math.pow(G_MAX / G_MIN, (a - G_DEAD) / (1 - G_DEAD));
+  }
+  const fmtTau = t => t < 1 ? `${Math.round(t * 1000)} fs` : t < 1000 ? `${t < 10 ? t.toFixed(1) : Math.round(t)} ps` : `${(t / 1000).toFixed(t < 10000 ? 1 : 0)} ns`;
+  const fmtGdd = g => g === 0 ? '0' : `${g > 0 ? '+' : '−'}${Math.abs(g) < 1 ? Math.abs(g).toFixed(2) : Math.abs(g) < 10 ? Math.abs(g).toFixed(1) : Math.round(Math.abs(g))}`;
+  function updGdd() {
+    gdd = laser === 'ns' ? 0 : gddFromSlider(+$('gdd').value);
+    $('gdd').disabled = laser === 'ns';
+    $('gddOut').textContent = laser === 'ns' ? 'n/a (narrowband)' : `${fmtGdd(gdd)} ps² · ${fmtTau(LZ.pulseLength(laser, gdd))}`;
+    updSub();
+  }
+  $('gdd').oninput = updGdd;
 
   const SPOTS = [2, 4, 8, 16];
   for (const s of SPOTS) {
@@ -168,18 +205,20 @@
     $('spots').appendChild(b);
   }
   function markSpots() { for (const b of $('spots').children) b.classList.toggle('on', +b.dataset.w === w0); }
-  function setLaser(l) { laser = l; $('lfs').classList.toggle('on', l === 'fs'); $('lns').classList.toggle('on', l === 'ns'); updFlu(); updSub(); }
+  function setLaser(l) { laser = l; $('lfs').classList.toggle('on', l === 'fs'); $('lns').classList.toggle('on', l === 'ns'); updGdd(); updFlu(); }
   $('lfs').onclick = () => setLaser('fs');
   $('lns').onclick = () => setLaser('ns');
 
   function updSub() {
     const L = LZ.LASERS[laser];
-    $('lvlSub').textContent = `${L.name} · ${L.wavelength} · steel`;
+    const chirp = laser === 'fs' && gdd !== 0 ? ` · chirped to ${fmtTau(LZ.pulseLength(laser, gdd))}` : '';
+    $('lvlSub').textContent = `${L.name} · ${L.wavelength}${chirp} · steel`;
   }
 
   function loadLevel(i) {
     lvl = LEVELS[i]; lvl.index = i;
     laser = lvl.laser; w0 = lvl.w0;
+    $('gdd').value = 0; gdd = 0; setShape('gauss');
     $('freeRow1').hidden = $('freeRow2').hidden = !lvl.free;
     $('doneBtn').hidden = !!lvl.free;
     setLaser(laser); markSpots();
@@ -197,14 +236,18 @@
 
   function showIntro() {
     card(`<h2>${lvl.name}</h2><p class="goal">${lvl.goal}</p><p>${lvl.intro}</p>
-      <p class="break">Drag anywhere on the screen to aim; hold to fire. The fluence slider sets the pulse energy per area.</p>
+      <p class="break">Drag anywhere on the screen to aim; hold to fire. The fluence slider sets the pulse energy.
+      Beam reshapes it into a top hat (flat, but a lower peak); GDD chirps the pulse longer.</p>
       <div class="btns"><button class="primary" id="go">Start</button></div>`);
     $('go').onclick = closeCard;
   }
   $('helpBtn').onclick = () => {
     card(`<h2>Hint</h2><p class="hint">${lvl.hint}</p>
       <p class="break">Ablation per pulse: depth = δ·ln(F/F<sub>th</sub>), zero below the threshold F<sub>th</sub>
-      (${LZ.LASERS[laser].Fth} J/cm² here). On a sloped wall the fluence is spread over more area, so it drops by cos θ.</p>
+      (${(() => { const t = curBeam().mat.Fth; return t < 1 ? t.toFixed(2) : t.toFixed(1); })()} J/cm² here). On a sloped wall the fluence is spread over more area, so it drops by cos θ.</p>
+      <p class="break">A top hat spreads the same energy evenly, so its peak is only ${LZ.peakFactor(16).toFixed(2)}× the Gaussian's,
+      but the floor comes out flat and the walls steep. GDD stretches a femtosecond pulse; past ~10 ps heat has time to
+      spread, the threshold rises and the metal starts to melt.</p>
       <div class="btns"><button class="primary" id="go">OK</button></div>`);
     $('go').onclick = closeCard;
   };
@@ -238,7 +281,7 @@
   // ---------- particles ----------
   function surfaceAt(um) { const i = Math.max(0, Math.min(work.n - 1, Math.round(um / DX))); return work.h[i]; }
   function spawn(removed) {
-    const ns = laser === 'ns';
+    const ns = curBeam().melt > 0.5;
     const count = Math.min(6, 1 + Math.round(removed * (ns ? 0.6 : 3)));
     const yS = surfaceAt(aimX);
     for (let i = 0; i < count; i++) {
@@ -295,7 +338,10 @@
     if (firing) {
       const col = laser === 'ns' ? '255,90,90' : '199,125,255';
       const g = ctx.createLinearGradient(xs - coneTop, 0, xs + coneTop, 0);
-      g.addColorStop(0, `rgba(${col},0)`); g.addColorStop(0.5, `rgba(${col},.55)`); g.addColorStop(1, `rgba(${col},0)`);
+      g.addColorStop(0, `rgba(${col},0)`);
+      if (shape === 'tophat') { g.addColorStop(0.2, `rgba(${col},.38)`); g.addColorStop(0.8, `rgba(${col},.38)`); }
+      else g.addColorStop(0.5, `rgba(${col},.55)`);
+      g.addColorStop(1, `rgba(${col},0)`);
       ctx.fillStyle = g;
       ctx.beginPath(); ctx.moveTo(xs - coneTop, top); ctx.lineTo(xs + coneTop, top);
       ctx.lineTo(xs + halfW, ys); ctx.lineTo(xs - halfW, ys); ctx.closePath(); ctx.fill();
@@ -306,13 +352,31 @@
       ctx.setLineDash([3, 5]); ctx.strokeStyle = 'rgba(199,125,255,.45)'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(xs, top); ctx.lineTo(xs, ys); ctx.stroke(); ctx.setLineDash([]);
     }
+    drawProfile();
     // where the beam is above threshold, on a flat surface
-    const D = LZ.craterDiameter(w0, F0);
+    const D = LZ.craterDiameter(w0, F0, laser, opts());
     ctx.strokeStyle = firing ? 'rgba(255,255,255,.8)' : 'rgba(199,125,255,.8)'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(X(aimX - D / 2), Y(AIR - 3)); ctx.lineTo(X(aimX + D / 2), Y(AIR - 3)); ctx.stroke();
     ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(199,125,255,.35)';
     ctx.beginPath(); ctx.moveTo(X(aimX - w0), Y(AIR - 3)); ctx.lineTo(X(aimX - w0), Y(AIR - 5));
     ctx.moveTo(X(aimX + w0), Y(AIR - 3)); ctx.lineTo(X(aimX + w0), Y(AIR - 5)); ctx.stroke();
+  }
+
+  // Fluence profile across the beam, on a log scale, against the ablation threshold
+  function drawProfile() {
+    const B = curBeam(), base = Y(AIR - 3), hgt = 6 * k;
+    const norm = Math.log1p(F_MAX), yOf = F => base - hgt * Math.log1p(F) / norm;
+    const span = 1.6 * w0;
+    ctx.save();
+    ctx.beginPath();
+    for (let j = 0; j <= 80; j++) {
+      const r = -span + 2 * span * j / 80, x = X(aimX + r), y = yOf(B.profile(r));
+      j ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.strokeStyle = firing ? 'rgba(255,255,255,.7)' : 'rgba(199,125,255,.6)'; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.setLineDash([2, 3]); ctx.strokeStyle = 'rgba(255,179,71,.6)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(X(aimX - span), yOf(1)); ctx.lineTo(X(aimX + span), yOf(1)); ctx.stroke();
+    ctx.restore();
   }
 
   function drawParticles() {
@@ -350,7 +414,7 @@
   function frame() {
     if (firing && $('ov').hidden) {
       let removed = 0;
-      for (let i = 0; i < PULSES_PER_FRAME; i++) removed += LZ.pulse(work, laser, aimX, w0, F0);
+      for (let i = 0; i < PULSES_PER_FRAME; i++) removed += LZ.pulse(work, laser, aimX, w0, F0, opts());
       if (removed > 0) spawn(removed);
     }
     ctx.fillStyle = '#07080c'; ctx.fillRect(0, 0, W, H);
