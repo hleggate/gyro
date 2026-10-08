@@ -25,9 +25,16 @@
   .title small { display:block; font-weight:400; color:var(--dim); font-size:12px; letter-spacing:0; }
   .legend { font-size:12px; color:var(--dim); text-align:right; }
   .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; vertical-align:1px; }
-  .caption { position:fixed; left:16px; right:16px; bottom:calc(env(safe-area-inset-bottom) + 76px);
+  .caption { position:fixed; left:16px; right:16px; bottom:calc(env(safe-area-inset-bottom) + 124px);
     text-align:center; font-size:14px; color:var(--fg); text-shadow:0 1px 6px #000; pointer-events:none;
     transition:opacity .3s; }
+  .brow { position:fixed; left:12px; right:12px; bottom:calc(env(safe-area-inset-bottom) + 68px);
+    display:flex; gap:10px; align-items:center; padding:6px 12px; border-radius:12px;
+    background:var(--panel); border:1px solid #2a3550; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+  .brow label { font-size:14px; white-space:nowrap; }
+  .brow output { font-size:13px; color:var(--dim); min-width:38px; text-align:right; font-variant-numeric:tabular-nums; }
+  .brow input { flex:1; accent-color:#6b8cff; height:28px; }
+  .brow button { min-width:0; padding:6px 10px; font-size:16px; }
   .bar { position:fixed; left:0; right:0; bottom:0; padding:10px 12px calc(env(safe-area-inset-bottom) + 12px);
     display:flex; gap:8px; justify-content:center; }
   button { appearance:none; border:1px solid #2a3550; background:var(--panel); color:var(--fg);
@@ -48,11 +55,18 @@
 <canvas id="c"></canvas>
 
 <div class="top">
-  <div class="title">GYRO<small>B points out of the screen ⊙</small></div>
+  <div class="title">GYRO<small id="bdir">B points out of the screen ⊙</small></div>
   <div class="legend"><span class="dot" style="background:var(--ion)"></span>ion<br><span class="dot" style="background:var(--el)"></span>electron</div>
 </div>
 
 <div class="caption" id="caption"></div>
+
+<div class="brow">
+  <label for="bmag">B</label>
+  <input id="bmag" type="range" min="0.4" max="3" step="0.05" value="1">
+  <output id="bval">1.0×</output>
+  <button id="flip" aria-label="Flip field direction">⊙</button>
+</div>
 
 <div class="bar">
   <button id="tilt">Tilt</button>
@@ -68,6 +82,7 @@
     <p>Ions (orange) and electrons (blue) spiral around a magnetic field pointing straight out of your screen. Electrons are lighter, so they circle faster and tighter, and the other way round.</p>
     <p><b>Tilt</b> the phone (or drag a finger) to add an electric field. Everything drifts sideways to it at the same speed, whatever its charge: the E×B drift.</p>
     <p><b>∇B</b> makes the field stronger at the top. Now ions and electrons drift in <i>opposite</i> directions, which is a current.</p>
+    <p>The <b>B</b> slider sets the field strength: stronger field, tighter circles and slower drift (it goes as E/B). <b>⊙/⊗</b> flips the field into the screen, which reverses the spin and the drifts.</p>
     <p>Tap anywhere to add a pair of particles.</p>
     <button id="go">Start</button>
   </div>
@@ -164,6 +179,15 @@
   $('tilt').onclick = toggleTilt;
   $('grad').onclick = () => { sim.gradB = sim.gradB ? 0 : 1.5; $('grad').classList.toggle('on', !!sim.gradB); };
   $('add').onclick = () => seed(16);
+  let bMag = 1, bSign = 1;
+  function setB() {
+    sim.B0 = 0.05 * bMag * bSign;
+    $('bval').textContent = bMag.toFixed(1) + '\u00d7';
+    $('flip').textContent = bSign > 0 ? '\u2299' : '\u2297';
+    $('bdir').textContent = bSign > 0 ? 'B points out of the screen \u2299' : 'B points into the screen \u2297';
+  }
+  $('bmag').oninput = e => { bMag = +e.target.value; setB(); };
+  $('flip').onclick = () => { bSign = -bSign; setB(); };
   $('clear').onclick = () => { sim.particles.length = 0; ctx.fillStyle = '#05070d'; ctx.fillRect(0, 0, W, H); };
   $('info').onclick = () => { $('help').hidden = false; };
   $('go').onclick = () => {

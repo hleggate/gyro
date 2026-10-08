@@ -18,8 +18,9 @@
 
   function Bat(sim, y) {
     // stronger towards the top of the screen (small y)
-    const b = sim.B0 * (1 + sim.gradB * (0.5 - y / sim.H));
-    return Math.max(b, sim.B0 * 0.05);
+    const b0 = Math.abs(sim.B0);
+    const b = Math.max(b0 * (1 + sim.gradB * (0.5 - y / sim.H)), b0 * 0.05);
+    return sim.B0 < 0 ? -b : b;
   }
 
   function addParticle(sim, kind, x, y) {

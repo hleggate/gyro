@@ -1,5 +1,5 @@
 // Offline cache. Bump VERSION when files change so phones pick up the update.
-const VERSION = 'gyro-v1';
+const VERSION = 'gyro-v2';
 const FILES = ['./', 'index.html', 'physics.js', 'manifest.webmanifest',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', e => {
