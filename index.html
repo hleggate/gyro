@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Gyro</title>
+<meta name="description" content="Pocket plasma: charged particles gyrating in a magnetic field. Tilt to make them drift.">
+<meta name="theme-color" content="#05070d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gyro">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<style>
+  :root { --bg:#05070d; --fg:#e8eef8; --dim:#8a96ab; --ion:#ff9f43; --el:#4fc3f7; --panel:rgba(14,19,32,.82); }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+    font:15px/1.35 -apple-system, system-ui, sans-serif; overflow:hidden; touch-action:none; overscroll-behavior:none; }
+  canvas { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  .top { position:fixed; left:0; right:0; top:0; padding:calc(env(safe-area-inset-top) + 10px) 16px 0;
+    display:flex; justify-content:space-between; align-items:flex-start; pointer-events:none; }
+  .title { font-weight:700; letter-spacing:.04em; font-size:17px; }
+  .title small { display:block; font-weight:400; color:var(--dim); font-size:12px; letter-spacing:0; }
+  .legend { font-size:12px; color:var(--dim); text-align:right; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; vertical-align:1px; }
+  .caption { position:fixed; left:16px; right:16px; bottom:calc(env(safe-area-inset-bottom) + 76px);
+    text-align:center; font-size:14px; color:var(--fg); text-shadow:0 1px 6px #000; pointer-events:none;
+    transition:opacity .3s; }
+  .bar { position:fixed; left:0; right:0; bottom:0; padding:10px 12px calc(env(safe-area-inset-bottom) + 12px);
+    display:flex; gap:8px; justify-content:center; }
+  button { appearance:none; border:1px solid #2a3550; background:var(--panel); color:var(--fg);
+    font:inherit; font-size:14px; padding:10px 12px; border-radius:12px; min-width:64px;
+    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+  button.on { border-color:#6b8cff; background:rgba(60,85,170,.55); }
+  button:active { transform:scale(.96); }
+  .help { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:24px;
+    background:rgba(3,5,10,.7); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); }
+  .help[hidden] { display:none; }
+  .card { max-width:360px; background:#0e1320; border:1px solid #23304a; border-radius:18px; padding:20px; }
+  .card h2 { margin:0 0 8px; font-size:20px; }
+  .card p { margin:8px 0; color:#c9d3e4; }
+  .card button { width:100%; margin-top:12px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="top">
+  <div class="title">GYRO<small>B points out of the screen ⊙</small></div>
+  <div class="legend"><span class="dot" style="background:var(--ion)"></span>ion<br><span class="dot" style="background:var(--el)"></span>electron</div>
+</div>
+
+<div class="caption" id="caption"></div>
+
+<div class="bar">
+  <button id="tilt">Tilt</button>
+  <button id="grad">∇B</button>
+  <button id="add">+ More</button>
+  <button id="clear">Clear</button>
+  <button id="info">?</button>
+</div>
+
+<div class="help" id="help">
+  <div class="card">
+    <h2>Pocket plasma</h2>
+    <p>Ions (orange) and electrons (blue) spiral around a magnetic field pointing straight out of your screen. Electrons are lighter, so they circle faster and tighter, and the other way round.</p>
+    <p><b>Tilt</b> the phone (or drag a finger) to add an electric field. Everything drifts sideways to it at the same speed, whatever its charge: the E×B drift.</p>
+    <p><b>∇B</b> makes the field stronger at the top. Now ions and electrons drift in <i>opposite</i> directions, which is a current.</p>
+    <p>Tap anywhere to add a pair of particles.</p>
+    <button id="go">Start</button>
+  </div>
+</div>
+
+<script src="physics.js"></script>
+<script>
+(() => {
+  const G = window.Gyro;
+  const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+  const $ = id => document.getElementById(id);
+  const caption = $('caption');
+  const EMAX = 0.025;            // gives a drift of 0.5 px/step at full tilt
+  const STEPS_PER_FRAME = 3;
+  const MAX_PARTICLES = 160;
+  let sim, W, H, dpr;
+  let tiltOn = false, tiltZero = null, dragging = null;
+
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * dpr; cv.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (!sim) { sim = G.makeSim(W, H); seed(24); }
+    else {
+      for (const p of sim.particles) { p.x = p.x / sim.W * W; p.y = p.y / sim.H * H; p.px = p.x; p.py = p.y; }
+      sim.W = W; sim.H = H;
+    }
+    ctx.fillStyle = '#05070d'; ctx.fillRect(0, 0, W, H);
+  }
+
+  function addPair(x, y) {
+    G.addParticle(sim, 'ion', x, y);
+    G.addParticle(sim, 'electron', x, y);
+    while (sim.particles.length > MAX_PARTICLES) sim.particles.shift();
+  }
+  function seed(n) { for (let i = 0; i < n / 2; i++) addPair(Math.random() * W, Math.random() * H); }
+
+  // ---- input: drag to set E, tap to add particles ----
+  cv.addEventListener('pointerdown', e => {
+    dragging = { x0: e.clientX, y0: e.clientY, moved: false, id: e.pointerId };
+    cv.setPointerCapture(e.pointerId);
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!dragging || tiltOn) return;
+    const dx = e.clientX - dragging.x0, dy = e.clientY - dragging.y0;
+    if (Math.hypot(dx, dy) > 8) dragging.moved = true;
+    if (dragging.moved) setE(dx / 120, dy / 120);
+  });
+  const endDrag = e => {
+    if (!dragging) return;
+    if (!dragging.moved) addPair(e.clientX, e.clientY);
+    if (!tiltOn) setE(0, 0);
+    dragging = null;
+  };
+  cv.addEventListener('pointerup', endDrag);
+  cv.addEventListener('pointercancel', endDrag);
+
+  function setE(fx, fy) {
+    const m = Math.hypot(fx, fy);
+    if (m > 1) { fx /= m; fy /= m; }
+    sim.Ex = fx * EMAX; sim.Ey = fy * EMAX;
+  }
+
+  // ---- tilt ----
+  function onOrient(e) {
+    if (e.beta == null) return;
+    // rotate device axes into screen axes for the current orientation
+    const ang = (screen.orientation && screen.orientation.angle) ?? window.orientation ?? 0;
+    let gx = e.gamma, gy = e.beta;
+    if (ang === 90)       [gx, gy] = [ e.beta, -e.gamma];
+    else if (ang === -90 || ang === 270) [gx, gy] = [-e.beta,  e.gamma];
+    else if (ang === 180) [gx, gy] = [-e.gamma, -e.beta];
+    if (!tiltZero) tiltZero = { gx, gy };
+    setE((gx - tiltZero.gx) / 25, (gy - tiltZero.gy) / 25);
+  }
+  async function toggleTilt() {
+    if (tiltOn) {
+      tiltOn = false; removeEventListener('deviceorientation', onOrient); setE(0, 0);
+    } else {
+      try {
+        if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
+          const r = await DeviceOrientationEvent.requestPermission();
+          if (r !== 'granted') { flash('Motion access was declined. You can still drag a finger.'); return; }
+        }
+      } catch (err) { flash('Tilt isn’t available here. Drag a finger instead.'); return; }
+      tiltOn = true; tiltZero = null; addEventListener('deviceorientation', onOrient);
+      flash('Tilt is on. Whatever angle you’re holding it now counts as level.');
+    }
+    $('tilt').classList.toggle('on', tiltOn);
+  }
+
+  // ---- buttons ----
+  $('tilt').onclick = toggleTilt;
+  $('grad').onclick = () => { sim.gradB = sim.gradB ? 0 : 1.5; $('grad').classList.toggle('on', !!sim.gradB); };
+  $('add').onclick = () => seed(16);
+  $('clear').onclick = () => { sim.particles.length = 0; ctx.fillStyle = '#05070d'; ctx.fillRect(0, 0, W, H); };
+  $('info').onclick = () => { $('help').hidden = false; };
+  $('go').onclick = () => {
+    $('help').hidden = true;
+    try { localStorage.setItem('gyro-seen', '1'); } catch (e) {}
+  };
+  try { if (localStorage.getItem('gyro-seen')) $('help').hidden = true; } catch (e) {}
+
+  let flashUntil = 0, flashText = '';
+  function flash(t) { flashText = t; flashUntil = performance.now() + 3500; }
+
+  function describe() {
+    if (performance.now() < flashUntil) return flashText;
+    const hasE = Math.hypot(sim.Ex, sim.Ey) > EMAX * 0.08;
+    if (hasE && sim.gradB) return 'E×B plus ∇B: a shared drift, with ions and electrons sliding apart on top';
+    if (hasE) return 'E×B drift: same speed and direction for every charge';
+    if (sim.gradB) return '∇B drift: ions and electrons go opposite ways, which is a current';
+    return 'Pure gyration. Tilt or drag to add an electric field';
+  }
+
+  // ---- drawing ----
+  function drawBackground() {
+    // fade old trails
+    ctx.fillStyle = 'rgba(5,7,13,0.10)';
+    ctx.fillRect(0, 0, W, H);
+    if (sim.gradB) {
+      // faint ⊙ markers, denser where B is stronger
+      ctx.fillStyle = 'rgba(120,140,190,0.035)';
+      for (let y = 30; y < H; y += 46) {
+        const k = G.Bat(sim, y) / sim.B0;
+        const gap = 70 / k;
+        for (let x = (y / 46 % 2) * gap / 2; x < W; x += gap) {
+          ctx.beginPath(); ctx.arc(x, y, 1.6, 0, 7); ctx.fill();
+        }
+      }
+    }
+  }
+
+  function drawEArrow() {
+    const m = Math.hypot(sim.Ex, sim.Ey) / EMAX;
+    if (m < 0.08) return;
+    const cx = W / 2, cy = H / 2, L = 40 + 60 * m;
+    const ux = sim.Ex / (m * EMAX), uy = sim.Ey / (m * EMAX);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cx - ux * L / 2, cy - uy * L / 2); ctx.lineTo(cx + ux * L / 2, cy + uy * L / 2); ctx.stroke();
+    const hx = cx + ux * L / 2, hy = cy + uy * L / 2;
+    ctx.beginPath(); ctx.moveTo(hx, hy);
+    ctx.lineTo(hx - ux * 10 - uy * 6, hy - uy * 10 + ux * 6);
+    ctx.lineTo(hx - ux * 10 + uy * 6, hy - uy * 10 - ux * 6); ctx.fill();
+    ctx.font = '13px -apple-system, system-ui, sans-serif';
+    ctx.fillText('E', hx + ux * 8 - 4, hy + uy * 8 + 4);
+    ctx.restore();
+  }
+
+  function frame() {
+    drawBackground();
+    ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+    for (let s = 0; s < STEPS_PER_FRAME; s++) {
+      G.step(sim, 1);
+      for (const p of sim.particles) {
+        if (p.wrapped) continue;
+        ctx.strokeStyle = p.color;
+        ctx.beginPath(); ctx.moveTo(p.px, p.py); ctx.lineTo(p.x, p.y); ctx.stroke();
+      }
+    }
+    for (const p of sim.particles) {
+      ctx.fillStyle = p.color;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.kind === 'ion' ? 2.6 : 1.8, 0, 7); ctx.fill();
+    }
+    drawEArrow();
+    const d = describe();
+    if (caption.textContent !== d) caption.textContent = d;
+    requestAnimationFrame(frame);
+  }
+
+  addEventListener('resize', resize);
+  resize();
+  requestAnimationFrame(frame);
+
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
