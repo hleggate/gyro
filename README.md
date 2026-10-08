@@ -7,3 +7,10 @@ It's a static web app (HTML + canvas, no build step) served by GitHub Pages. On 
 - `physics.js`: Boris particle pusher, periodic boundaries
 - `index.html`: drawing, touch and tilt input
 - `sw.js`: offline cache (bump `VERSION` when files change)
+
+## Laser Lab (`laser/`)
+
+A second game: cut micron-sized channels in steel with a pulsed laser, seen in cross-section. Each pulse removes depth δ·ln(F/F_th) wherever the Gaussian beam is above the ablation threshold, reduced by cos θ on sloped walls, which is why real laser-cut walls taper. Femtosecond pulses cut cleanly; nanosecond pulses melt and leave burrs and a heat-affected zone. Four levels plus free play.
+
+- `laser/laser.js`: ablation model and scoring
+- `laser/index.html`: game, levels and drawing

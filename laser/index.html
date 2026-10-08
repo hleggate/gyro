@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Laser Lab</title>
+<meta name="description" content="Cut micron-sized channels in steel with a pulsed laser.">
+<meta name="theme-color" content="#07080c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Laser Lab">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<style>
+  :root { --bg:#07080c; --fg:#eef1f6; --dim:#8d96a8; --acc:#c77dff; --ok:#5ee08a; --warn:#ffb347; --bad:#ff6b6b;
+    --panel:rgba(16,18,28,.88); --line:#2a2f44; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+    font:15px/1.35 -apple-system, system-ui, sans-serif; overflow:hidden; touch-action:none; overscroll-behavior:none;
+    -webkit-user-select:none; user-select:none; }
+  canvas { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  .top { position:fixed; left:0; right:0; top:0; padding:calc(env(safe-area-inset-top) + 10px) 16px 0;
+    display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+  .title { font-weight:700; font-size:17px; letter-spacing:.02em; }
+  .title small { display:block; font-weight:400; color:var(--dim); font-size:12px; letter-spacing:0; }
+  .panel { position:fixed; left:12px; right:12px; bottom:calc(env(safe-area-inset-bottom) + 12px);
+    background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:10px 12px;
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
+  .row { display:flex; align-items:center; gap:10px; min-height:40px; }
+  .row + .row { margin-top:4px; }
+  .row[hidden] { display:none; }
+  .row label { font-size:14px; min-width:62px; }
+  .row output { font-size:13px; color:var(--dim); min-width:92px; text-align:right; font-variant-numeric:tabular-nums; }
+  input[type=range] { flex:1; accent-color:var(--acc); height:28px; }
+  button { appearance:none; border:1px solid var(--line); background:#151927; color:var(--fg);
+    font:inherit; font-size:14px; padding:9px 12px; border-radius:11px; }
+  button:active { transform:scale(.96); }
+  button.on { border-color:var(--acc); background:rgba(199,125,255,.22); }
+  button.primary { background:var(--acc); border-color:var(--acc); color:#16081f; font-weight:600; }
+  .seg { display:flex; gap:6px; flex:1; }
+  .seg button { flex:1; padding:8px 4px; font-size:13px; }
+  .actions { display:flex; gap:8px; margin-top:8px; }
+  .actions button { flex:1; }
+  .overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:20px;
+    background:rgba(4,5,8,.72); backdrop-filter:blur(5px); -webkit-backdrop-filter:blur(5px); }
+  .overlay[hidden] { display:none; }
+  .card { width:100%; max-width:380px; max-height:90vh; overflow:auto; background:#10131d; border:1px solid var(--line);
+    border-radius:18px; padding:20px; touch-action:pan-y; }
+  .card h2 { margin:0 0 4px; font-size:21px; }
+  .card .goal { color:var(--ok); font-size:14px; margin:0 0 10px; }
+  .card p { margin:8px 0; color:#cdd3df; }
+  .card .hint { color:#e3d2f5; background:rgba(199,125,255,.10); border-radius:10px; padding:10px 12px; font-size:14px; }
+  .card .btns { display:flex; gap:8px; margin-top:14px; }
+  .card .btns button { flex:1; }
+  .lvl { display:flex; justify-content:space-between; align-items:center; width:100%; text-align:left; margin-top:8px; padding:12px 14px; }
+  .lvl span:last-child { color:var(--warn); letter-spacing:2px; }
+  .big { font-size:44px; font-weight:700; margin:6px 0 0; font-variant-numeric:tabular-nums; }
+  .stars { font-size:28px; color:var(--warn); letter-spacing:4px; }
+  .break { font-size:13px; color:var(--dim); }
+  a { color:var(--acc); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="top">
+  <div class="title" id="lvlTitle">LASER LAB<small id="lvlSub"></small></div>
+  <button id="menuBtn">Levels</button>
+</div>
+
+<div class="panel">
+  <div class="row" id="freeRow1" hidden>
+    <label>Pulse</label>
+    <div class="seg"><button id="lfs" class="on">Femto</button><button id="lns">Nano</button></div>
+  </div>
+  <div class="row" id="freeRow2" hidden>
+    <label>Spot Ø</label>
+    <div class="seg" id="spots"></div>
+  </div>
+  <div class="row">
+    <label for="flu">Fluence</label>
+    <input id="flu" type="range" min="0" max="1" step="0.002" value="0.3">
+    <output id="fluOut"></output>
+  </div>
+  <div class="actions">
+    <button id="resetBtn">Reset</button>
+    <button id="helpBtn">Hint</button>
+    <button id="doneBtn" class="primary">Done</button>
+  </div>
+</div>
+
+<div class="overlay" id="ov" hidden><div class="card" id="card"></div></div>
+
+<script src="laser.js"></script>
+<script>
+(() => {
+  const LZ = window.Laser;
+  const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+  const $ = id => document.getElementById(id);
+
+  const VIEW_W = 80, AIR = 14, DEPTH = 40, DX = 0.1, XC = 40;
+  const PULSES_PER_FRAME = 4, F_MIN = 1.05, F_MAX = 40;
+
+  const LEVELS = [
+    { id: 'first', name: 'First cut', laser: 'fs', w0: 8, tw: 30, td: 8,
+      goal: 'Cut a channel 30 µm wide and 8 µm deep.',
+      intro: 'Femtosecond pulses vaporise metal so fast that heat has no time to spread, so cuts are clean. Drag across the screen to aim and hold to fire.',
+      hint: 'Sweep steadily from one side to the other. A gentle fluence gives a flatter floor; a high one is quicker but rougher. Watch the match % at the top.' },
+    { id: 'hair', name: 'Hairline', laser: 'fs', w0: 8, tw: 5, td: 3,
+      goal: 'Cut a channel 5 µm wide and 3 µm deep, with a 16 µm laser spot.',
+      intro: 'The channel is a third the width of the laser spot. That sounds impossible, but the beam is Gaussian, and only the part above the damage threshold removes metal.',
+      hint: 'Turn the fluence right down so only the very tip of the beam is over threshold, then hold still on the target.' },
+    { id: 'nano', name: 'Nanosecond trouble', laser: 'ns', w0: 8, tw: 30, td: 8,
+      goal: 'Cut the 30 × 8 µm channel with nanosecond pulses.',
+      intro: 'Longer pulses melt the metal instead of vaporising it. The melt gets pushed out of the hole and freezes into burrs on the rim. Burrs cost triple.',
+      hint: 'The hotter the pulse, the more melt is thrown out. Keep the fluence low and be patient. A pass over the rim can shave burrs off too.' },
+    { id: 'deep', name: 'Deep trench', laser: 'fs', w0: 4, tw: 10, td: 20,
+      goal: 'Cut a trench 10 µm wide and 20 µm deep.',
+      intro: 'Deep, narrow channels are hard. A steep wall sees the beam at a glancing angle, so its fluence drops and the walls taper into a V.',
+      hint: 'Use a high fluence so the beam can still bite into the steep walls, and hold steady on the target.' },
+    { id: 'free', name: 'Free play', laser: 'fs', w0: 8, free: true,
+      goal: 'No target. Experiment.',
+      intro: 'Pick the pulse length and the spot size and draw whatever you like.',
+      hint: 'Try the same pattern with femto and nano pulses, or with a tiny and a huge spot.' },
+  ];
+
+  let best = {};
+  try { best = JSON.parse(localStorage.getItem('laser-best') || '{}'); } catch (e) {}
+  const saveBest = () => { try { localStorage.setItem('laser-best', JSON.stringify(best)); } catch (e) {} };
+  const stars = p => p >= 90 ? 3 : p >= 75 ? 2 : p >= 60 ? 1 : 0;
+  const starStr = n => '★'.repeat(n) + '☆'.repeat(3 - n);
+
+  let lvl, laser, w0, work = LZ.makeWork(VIEW_W, DX, DEPTH);
+  let F0 = 2, aimX = XC, firing = false, pointerId = null;
+  const particles = [];
+
+  // ---------- layout ----------
+  let W, H, dpr, k, ox, sy, panelTop;
+  function layout() {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    panelTop = document.querySelector('.panel').getBoundingClientRect().top;
+    k = Math.min((W - 24) / VIEW_W, (panelTop - 150) / (AIR + DEPTH + 18));
+    ox = (W - VIEW_W * k) / 2;
+    const top = 96 + (panelTop - 96 - (AIR + DEPTH + 18) * k) * 0.7;
+    sy = top + (AIR + 10) * k;              // y of the original surface
+  }
+  const X = um => ox + um * k;
+  const Y = um => sy - um * k;              // um: height above original surface
+
+  // ---------- UI ----------
+  const fluFromSlider = v => F_MIN * Math.pow(F_MAX / F_MIN, v);
+  const sliderFromFlu = F => Math.log(F / F_MIN) / Math.log(F_MAX / F_MIN);
+  function updFlu() {
+    F0 = fluFromSlider(+$('flu').value);
+    const J = F0 * LZ.LASERS[laser].Fth;
+    $('fluOut').textContent = `${J < 1 ? J.toFixed(2) : J.toFixed(1)} J/cm²`;
+  }
+  $('flu').oninput = updFlu;
+
+  const SPOTS = [2, 4, 8, 16];
+  for (const s of SPOTS) {
+    const b = document.createElement('button'); b.textContent = (2 * s) + ' µm'; b.dataset.w = s;
+    b.onclick = () => { w0 = s; markSpots(); };
+    $('spots').appendChild(b);
+  }
+  function markSpots() { for (const b of $('spots').children) b.classList.toggle('on', +b.dataset.w === w0); }
+  function setLaser(l) { laser = l; $('lfs').classList.toggle('on', l === 'fs'); $('lns').classList.toggle('on', l === 'ns'); updFlu(); updSub(); }
+  $('lfs').onclick = () => setLaser('fs');
+  $('lns').onclick = () => setLaser('ns');
+
+  function updSub() {
+    const L = LZ.LASERS[laser];
+    $('lvlSub').textContent = `${L.name} · ${L.wavelength} · steel`;
+  }
+
+  function loadLevel(i) {
+    lvl = LEVELS[i]; lvl.index = i;
+    laser = lvl.laser; w0 = lvl.w0;
+    $('freeRow1').hidden = $('freeRow2').hidden = !lvl.free;
+    $('doneBtn').hidden = !!lvl.free;
+    setLaser(laser); markSpots();
+    $('lvlTitle').firstChild.textContent = lvl.name.toUpperCase();
+    $('flu').value = sliderFromFlu(lvl.laser === 'ns' ? 3 : 2); updFlu();
+    LZ.reset(work); particles.length = 0;
+    try { localStorage.setItem('laser-level', i); } catch (e) {}
+    layout();
+    showIntro();
+  }
+
+  function card(html) { $('card').innerHTML = html; $('ov').hidden = false; }
+  function closeCard() { $('ov').hidden = true; }
+  $('ov').addEventListener('pointerdown', e => { if (e.target === $('ov')) closeCard(); });
+
+  function showIntro() {
+    card(`<h2>${lvl.name}</h2><p class="goal">${lvl.goal}</p><p>${lvl.intro}</p>
+      <p class="break">Drag anywhere on the screen to aim; hold to fire. The fluence slider sets the pulse energy per area.</p>
+      <div class="btns"><button class="primary" id="go">Start</button></div>`);
+    $('go').onclick = closeCard;
+  }
+  $('helpBtn').onclick = () => {
+    card(`<h2>Hint</h2><p class="hint">${lvl.hint}</p>
+      <p class="break">Ablation per pulse: depth = δ·ln(F/F<sub>th</sub>), zero below the threshold F<sub>th</sub>
+      (${LZ.LASERS[laser].Fth} J/cm² here). On a sloped wall the fluence is spread over more area, so it drops by cos θ.</p>
+      <div class="btns"><button class="primary" id="go">OK</button></div>`);
+    $('go').onclick = closeCard;
+  };
+  $('resetBtn').onclick = () => { LZ.reset(work); particles.length = 0; };
+  $('doneBtn').onclick = () => {
+    const s = LZ.score(work, XC, lvl.tw, lvl.td), n = stars(s.pct);
+    if (!best[lvl.id] || s.pct > best[lvl.id]) { best[lvl.id] = s.pct; saveBest(); }
+    const next = lvl.index + 1 < LEVELS.length ? `<button class="primary" id="next">Next</button>` : '';
+    const msg = n === 3 ? 'Beautiful. That would pass inspection.' : n === 2 ? 'Good cut.' : n === 1 ? 'It’s a channel. Just about.' : 'Not quite. Have another go.';
+    card(`<h2>${lvl.name}</h2><div class="big">${s.pct}%</div><div class="stars">${starStr(n)}</div><p>${msg}</p>
+      <p class="break">Missing metal ${s.under.toFixed(1)} µm² · overcut ${s.over.toFixed(1)} µm² · burrs ${s.burr.toFixed(1)} µm² ·
+      ${work.pulses} pulses</p>
+      <div class="btns"><button id="retry">Retry</button>${next}</div>`);
+    $('retry').onclick = () => { LZ.reset(work); particles.length = 0; closeCard(); };
+    if (next) $('next').onclick = () => loadLevel(lvl.index + 1);
+  };
+  $('menuBtn').onclick = () => {
+    const rows = LEVELS.map((L, i) => `<button class="lvl" data-i="${i}"><span>${i + 1}. ${L.name}</span>
+      <span>${L.free ? '' : best[L.id] != null ? starStr(stars(best[L.id])) : ''}</span></button>`).join('');
+    card(`<h2>Levels</h2>${rows}<p class="break" style="margin-top:14px">Also try <a href="../">Gyro</a>, the pocket plasma.</p>`);
+    for (const b of document.querySelectorAll('.lvl')) b.onclick = () => loadLevel(+b.dataset.i);
+  };
+
+  // ---------- input ----------
+  const toUm = clientX => Math.max(0, Math.min(VIEW_W, (clientX - ox) / k));
+  cv.addEventListener('pointerdown', e => { pointerId = e.pointerId; cv.setPointerCapture(e.pointerId); aimX = toUm(e.clientX); firing = true; });
+  cv.addEventListener('pointermove', e => { if (e.pointerId === pointerId || e.pointerType === 'mouse') aimX = toUm(e.clientX); });
+  const stop = e => { if (e.pointerId === pointerId) { firing = false; pointerId = null; } };
+  cv.addEventListener('pointerup', stop); cv.addEventListener('pointercancel', stop);
+
+  // ---------- particles ----------
+  function surfaceAt(um) { const i = Math.max(0, Math.min(work.n - 1, Math.round(um / DX))); return work.h[i]; }
+  function spawn(removed) {
+    const ns = laser === 'ns';
+    const count = Math.min(6, 1 + Math.round(removed * (ns ? 0.6 : 3)));
+    const yS = surfaceAt(aimX);
+    for (let i = 0; i < count; i++) {
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * (ns ? 1.6 : 1.0);
+      const sp = ns ? 0.6 + Math.random() * 1.4 : 1.5 + Math.random() * 2.5;
+      particles.push({ x: aimX + (Math.random() - 0.5) * w0 * 0.6, y: yS, vx: Math.cos(a) * sp, vy: -Math.sin(a) * sp,
+        life: ns ? 40 + Math.random() * 30 : 12 + Math.random() * 10, ns });
+    }
+    if (particles.length > 400) particles.splice(0, particles.length - 400);
+  }
+
+  // ---------- drawing ----------
+  function drawMetal() {
+    const h = work.h, n = work.n;
+    const g = ctx.createLinearGradient(0, Y(2), 0, Y(-DEPTH));
+    g.addColorStop(0, '#b8c0cc'); g.addColorStop(0.08, '#8d96a4'); g.addColorStop(1, '#3b414c');
+    ctx.beginPath(); ctx.moveTo(X(0), Y(-DEPTH));
+    for (let i = 0; i < n; i += 2) ctx.lineTo(X(i * DX), Y(h[i]));
+    ctx.lineTo(X(VIEW_W), Y(h[n - 1])); ctx.lineTo(X(VIEW_W), Y(-DEPTH)); ctx.closePath();
+    ctx.fillStyle = g; ctx.fill();
+    // heat-affected zone tint
+    ctx.save(); ctx.clip();
+    for (let i = 0; i < n; i += 4) {
+      const t = work.heat[i]; if (t < 0.02) continue;
+      const gy = ctx.createLinearGradient(0, Y(h[i]), 0, Y(h[i] - 6));
+      gy.addColorStop(0, `rgba(255,120,40,${0.55 * t})`); gy.addColorStop(1, 'rgba(255,120,40,0)');
+      ctx.fillStyle = gy; ctx.fillRect(X(i * DX), Y(h[i]), 4 * DX * k + 1, 6 * k);
+    }
+    ctx.restore();
+    // bright surface line
+    ctx.beginPath();
+    for (let i = 0; i < n; i += 2) { const x = X(i * DX), y = Y(h[i]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+    ctx.strokeStyle = 'rgba(235,240,248,.75)'; ctx.lineWidth = 1; ctx.stroke();
+  }
+
+  function drawTarget() {
+    if (lvl.free) return;
+    const tol = LZ.tolerance(lvl.tw, lvl.td);
+    const x0 = X(XC - lvl.tw / 2), x1 = X(XC + lvl.tw / 2);
+    ctx.save();
+    ctx.fillStyle = 'rgba(94,224,138,.10)';
+    ctx.beginPath();
+    ctx.rect(X(XC - lvl.tw / 2 - tol), Y(0), (lvl.tw + 2 * tol) * k, (lvl.td + tol) * k);
+    ctx.rect(X(XC - lvl.tw / 2 + tol), Y(0), Math.max(0, lvl.tw - 2 * tol) * k, Math.max(0, lvl.td - tol) * k);
+    ctx.fill('evenodd');
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = 'rgba(94,224,138,.9)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x0, Y(0)); ctx.lineTo(x0, Y(-lvl.td)); ctx.lineTo(x1, Y(-lvl.td)); ctx.lineTo(x1, Y(0)); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawBeam() {
+    const xs = X(aimX), ys = Y(surfaceAt(aimX)), top = 92;
+    const halfW = Math.max(1.5, w0 * k), coneTop = halfW * 3.2;
+    if (firing) {
+      const col = laser === 'ns' ? '255,90,90' : '199,125,255';
+      const g = ctx.createLinearGradient(xs - coneTop, 0, xs + coneTop, 0);
+      g.addColorStop(0, `rgba(${col},0)`); g.addColorStop(0.5, `rgba(${col},.55)`); g.addColorStop(1, `rgba(${col},0)`);
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.moveTo(xs - coneTop, top); ctx.lineTo(xs + coneTop, top);
+      ctx.lineTo(xs + halfW, ys); ctx.lineTo(xs - halfW, ys); ctx.closePath(); ctx.fill();
+      const rg = ctx.createRadialGradient(xs, ys, 0, xs, ys, halfW * 1.6);
+      rg.addColorStop(0, 'rgba(255,255,255,.95)'); rg.addColorStop(0.3, `rgba(${laser === 'ns' ? '255,180,90' : '170,210,255'},.6)`); rg.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(xs, ys, halfW * 1.6, 0, 7); ctx.fill();
+    } else {
+      ctx.setLineDash([3, 5]); ctx.strokeStyle = 'rgba(199,125,255,.45)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(xs, top); ctx.lineTo(xs, ys); ctx.stroke(); ctx.setLineDash([]);
+    }
+    // where the beam is above threshold, on a flat surface
+    const D = LZ.craterDiameter(w0, F0);
+    ctx.strokeStyle = firing ? 'rgba(255,255,255,.8)' : 'rgba(199,125,255,.8)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(X(aimX - D / 2), Y(AIR - 3)); ctx.lineTo(X(aimX + D / 2), Y(AIR - 3)); ctx.stroke();
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(199,125,255,.35)';
+    ctx.beginPath(); ctx.moveTo(X(aimX - w0), Y(AIR - 3)); ctx.lineTo(X(aimX - w0), Y(AIR - 5));
+    ctx.moveTo(X(aimX + w0), Y(AIR - 3)); ctx.lineTo(X(aimX + w0), Y(AIR - 5)); ctx.stroke();
+  }
+
+  function drawParticles() {
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx * 0.5; p.y += p.vy * 0.5; if (p.ns) p.vy -= 0.06; p.life--;
+      if (p.life <= 0) { particles.splice(i, 1); continue; }
+      const a = Math.min(1, p.life / 15);
+      ctx.fillStyle = p.ns ? `rgba(255,${140 + Math.round(80 * a)},60,${a})` : `rgba(200,225,255,${a})`;
+      ctx.beginPath(); ctx.arc(X(p.x), Y(p.y), p.ns ? 1.8 : 1.2, 0, 7); ctx.fill();
+    }
+  }
+
+  function drawHud() {
+    ctx.font = '12px -apple-system, system-ui, sans-serif'; ctx.fillStyle = '#8d96a8'; ctx.textBaseline = 'alphabetic';
+    // scale bar
+    const yb = Y(-DEPTH) + 18;
+    ctx.fillStyle = '#cfd5e0'; ctx.fillRect(X(2), yb, 10 * k, 2);
+    ctx.fillText('10 µm', X(2) + 10 * k + 6, yb + 5);
+    ctx.fillStyle = '#8d96a8';
+    ctx.textAlign = 'right';
+    ctx.fillText(`spot Ø ${2 * w0} µm · ${work.pulses} pulses`, X(VIEW_W) - 2, yb + 5);
+    ctx.textAlign = 'left';
+    if (!lvl.free) {
+      const s = LZ.score(work, XC, lvl.tw, lvl.td);
+      ctx.font = '600 15px -apple-system, system-ui, sans-serif';
+      ctx.fillStyle = s.pct >= 90 ? '#5ee08a' : s.pct >= 60 ? '#ffb347' : '#cfd5e0';
+      ctx.fillText(`match ${s.pct}%`, X(1), Y(AIR + 6));
+      ctx.font = '12px -apple-system, system-ui, sans-serif'; ctx.fillStyle = '#8d96a8'; ctx.textAlign = 'right';
+      ctx.fillText(`target ${lvl.tw} × ${lvl.td} µm`, X(VIEW_W) - 2, Y(AIR + 6));
+      ctx.textAlign = 'left';
+    }
+  }
+
+  function frame() {
+    if (firing && $('ov').hidden) {
+      let removed = 0;
+      for (let i = 0; i < PULSES_PER_FRAME; i++) removed += LZ.pulse(work, laser, aimX, w0, F0);
+      if (removed > 0) spawn(removed);
+    }
+    ctx.fillStyle = '#07080c'; ctx.fillRect(0, 0, W, H);
+    drawMetal(); drawTarget(); drawParticles(); drawBeam(); drawHud();
+    requestAnimationFrame(frame);
+  }
+
+  addEventListener('resize', layout);
+  let start = 0;
+  try { start = Math.min(LEVELS.length - 1, +(localStorage.getItem('laser-level') || 0)); } catch (e) {}
+  loadLevel(start);
+  requestAnimationFrame(frame);
+
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('../sw.js').catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
