@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Dot Foundry</title>
+<meta name="description" content="Grow CdSe quantum dots by hot injection and fill orders for exact colours.">
+<meta name="theme-color" content="#06070b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Dot Foundry">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<style>
+  :root { --bg:#06070b; --fg:#eef1f6; --dim:#8d96a8; --acc:#5fd3c4; --warn:#ffb347; --line:#262c3f; --panel:rgba(15,18,27,.9); }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+    font:15px/1.35 -apple-system, system-ui, sans-serif; overflow:hidden; touch-action:none; overscroll-behavior:none;
+    -webkit-user-select:none; user-select:none; }
+  canvas { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  .top { position:fixed; left:0; right:0; top:0; padding:calc(env(safe-area-inset-top) + 10px) 16px 0;
+    display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+  .title { font-weight:700; font-size:17px; letter-spacing:.02em; }
+  .title small { display:block; font-weight:400; color:var(--dim); font-size:12px; letter-spacing:0; }
+  .panel { position:fixed; left:12px; right:12px; bottom:calc(env(safe-area-inset-bottom) + 12px);
+    background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:10px 12px;
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
+  .row { display:flex; align-items:center; gap:10px; min-height:40px; }
+  .row label { font-size:14px; min-width:44px; }
+  .row output { font-size:13px; color:var(--dim); min-width:96px; text-align:right; font-variant-numeric:tabular-nums; }
+  input[type=range] { flex:1; accent-color:#ff8a5c; height:28px; }
+  button { appearance:none; border:1px solid var(--line); background:#141826; color:var(--fg);
+    font:inherit; font-size:14px; padding:10px 8px; border-radius:11px; }
+  button:active { transform:scale(.96); }
+  button:disabled { opacity:.4; }
+  button.on { border-color:var(--acc); background:rgba(95,211,196,.18); }
+  button.primary { background:var(--acc); border-color:var(--acc); color:#06231f; font-weight:600; }
+  .actions { display:flex; gap:8px; margin-top:8px; }
+  .actions button { flex:1; }
+  .overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:20px;
+    background:rgba(4,5,8,.72); backdrop-filter:blur(5px); -webkit-backdrop-filter:blur(5px); }
+  .overlay[hidden] { display:none; }
+  .card { width:100%; max-width:380px; max-height:90vh; overflow:auto; background:#0f121b; border:1px solid var(--line);
+    border-radius:18px; padding:20px; touch-action:pan-y; }
+  .card h2 { margin:0 0 4px; font-size:21px; }
+  .card .goal { font-size:14px; margin:0 0 10px; display:flex; align-items:center; gap:8px; }
+  .swatch { width:18px; height:18px; border-radius:50%; display:inline-block; box-shadow:0 0 12px currentColor; }
+  .card p { margin:8px 0; color:#cdd3df; }
+  .card .hint { color:#d5f3ee; background:rgba(95,211,196,.10); border-radius:10px; padding:10px 12px; font-size:14px; }
+  .card .btns { display:flex; gap:8px; margin-top:14px; }
+  .card .btns button { flex:1; }
+  .lvl { display:flex; justify-content:space-between; align-items:center; width:100%; text-align:left; margin-top:8px; padding:12px 14px; }
+  .lvl span:last-child { color:var(--warn); letter-spacing:2px; }
+  .big { font-size:44px; font-weight:700; margin:6px 0 0; font-variant-numeric:tabular-nums; }
+  .stars { font-size:28px; color:var(--warn); letter-spacing:4px; }
+  .small { font-size:13px; color:var(--dim); }
+  a { color:var(--acc); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="top">
+  <div class="title" id="lvlTitle">DOT FOUNDRY<small id="lvlSub">CdSe quantum dots · hot injection</small></div>
+  <button id="menuBtn">Orders</button>
+</div>
+
+<div class="panel">
+  <div class="row">
+    <label for="temp">Heat</label>
+    <input id="temp" type="range" min="200" max="340" step="1" value="300">
+    <output id="tempOut"></output>
+  </div>
+  <div class="actions">
+    <button id="injBtn">Inject</button>
+    <button id="dripBtn">Drip</button>
+    <button id="helpBtn">Hint</button>
+    <button id="quenchBtn" class="primary">Quench</button>
+  </div>
+</div>
+
+<div class="overlay" id="ov" hidden><div class="card" id="card"></div></div>
+
+<script src="qd.js"></script>
+<script>
+(() => {
+  const Q = window.QD;
+  const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+  const $ = id => document.getElementById(id);
+  const SIM_PER_SEC = 2;            // reaction seconds per real second
+  const L0 = 420, L1 = 700;
+  const BAND = 15;                  // order tolerance (nm either side)
+  const IDEAL = 0.72;               // purity of the best batch a real early quench gives
+
+  const LEVELS = [
+    { id: 'green', name: 'Green', target: 530, T: 300,
+      intro: 'Cadmium and selenium precursors react the instant they hit the hot solvent. A burst of tiny crystals nucleates, then grows. Small dots glow blue; as they grow, quantum confinement relaxes and the glow shifts to the red.',
+      hint: 'Tap Inject, watch the flask, and Quench as the peak passes 530 nm. Growth carries on for a moment after you think it’s right, so quench slightly early.' },
+    { id: 'orange', name: 'Sunset orange', target: 600, T: 270,
+      intro: 'A cooler flask makes more nuclei, and so smaller dots once the monomer runs out. A hotter flask makes fewer, bigger dots.',
+      hint: 'Set the heat first, then inject. Around 270 °C the dots run out of monomer at about 600 nm, so you can just wait for growth to stop.' },
+    { id: 'blue', name: 'Deep blue', target: 480, T: 250,
+      intro: 'Blue dots are only about 2 nm across. At 300 °C they race through blue in a blink.',
+      hint: 'Turn the heat down before injecting so growth is slower and you have time to react. Quench just before 480 nm.' },
+    { id: 'red', name: 'Ruby', target: 660, T: 320,
+      intro: 'Big dots need more material than one injection supplies. A second hot injection would just nucleate a new crop of small dots.',
+      hint: 'Inject, let the first batch grow, then turn on Drip to feed precursor in slowly. Slow addition grows the existing dots without nucleating new ones.' },
+    { id: 'free', name: 'Free play', free: true, T: 300,
+      intro: 'No order: experiment. Try two hot injections and look at the spectrum.',
+      hint: 'The size spread (±%) is the thing to watch: real syntheses aim for under about 10%.' },
+  ];
+
+  let best = {};
+  try { best = JSON.parse(localStorage.getItem('qd-best') || '{}'); } catch (e) {}
+  const saveBest = () => { try { localStorage.setItem('qd-best', JSON.stringify(best)); } catch (e) {} };
+  const stars = p => p >= 90 ? 3 : p >= 75 ? 2 : p >= 60 ? 1 : 0;
+  const starStr = n => '★'.repeat(n) + '☆'.repeat(3 - n);
+
+  // wavelength (nm) to an sRGB colour, after Dan Bruton's approximation
+  function wlRGB(l) {
+    let r = 0, g = 0, b = 0;
+    if (l < 440) { r = -(l - 440) / 60; b = 1; }
+    else if (l < 490) { g = (l - 440) / 50; b = 1; }
+    else if (l < 510) { g = 1; b = -(l - 510) / 20; }
+    else if (l < 580) { r = (l - 510) / 70; g = 1; }
+    else if (l < 645) { r = 1; g = -(l - 645) / 65; }
+    else r = 1;
+    let f = 1;
+    if (l < 420) f = 0.3 + 0.7 * (l - 380) / 40; else if (l > 680) f = 0.3 + 0.7 * (720 - l) / 40;
+    const c = v => Math.round(255 * Math.pow(Math.max(0, Math.min(1, v * f)), 0.8));
+    return [c(r), c(g), c(b)];
+  }
+  const css = (rgb, a = 1) => `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${a})`;
+
+  let lvl, flask, spec, running = false, done = false, bubbles = [], drops = 0;
+
+  // ---------- layout ----------
+  let W, H, dpr, panelTop;
+  function layout() {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    panelTop = document.querySelector('.panel').getBoundingClientRect().top;
+  }
+
+  // ---------- UI ----------
+  $('temp').oninput = () => { flask.setT = +$('temp').value + 273; };
+  $('injBtn').onclick = () => {
+    if (done) return;
+    Q.inject(flask, flask.injections ? 0.6 : 1); running = true; drops = 18;
+  };
+  $('dripBtn').onclick = () => { if (done) return; flask.drip = !flask.drip; $('dripBtn').classList.toggle('on', !!flask.drip); };
+  $('quenchBtn').onclick = () => quench();
+  $('helpBtn').onclick = () => {
+    card(`<h2>Hint</h2><p class="hint">${lvl.hint}</p>
+      <p class="small">Dots smaller than the critical size (set by how supersaturated the solution is) dissolve, and bigger ones grow.
+      Emission colour comes from the size, via the CdSe sizing curve of Yu <i>et al.</i> (2003).</p>
+      <div class="btns"><button class="primary" id="go">OK</button></div>`);
+    $('go').onclick = closeCard;
+  };
+
+  function card(html) { $('card').innerHTML = html; $('ov').hidden = false; }
+  function closeCard() { $('ov').hidden = true; }
+  $('ov').addEventListener('pointerdown', e => { if (e.target === $('ov')) closeCard(); });
+
+  function goalLine() {
+    if (lvl.free) return '<p class="goal">No order. Experiment.</p>';
+    const c = css(wlRGB(lvl.target));
+    return `<p class="goal"><span class="swatch" style="background:${c};color:${c}"></span>Order: dots emitting at ${lvl.target} nm, narrow linewidth</p>`;
+  }
+
+  function loadLevel(i) {
+    lvl = LEVELS[i]; lvl.index = i;
+    flask = Q.makeFlask(); flask.setT = flask.T = lvl.T + 273;
+    $('temp').value = lvl.T; running = false; done = false; drops = 0;
+    $('dripBtn').classList.remove('on');
+    for (const b of ['injBtn', 'dripBtn', 'quenchBtn']) $(b).disabled = false;
+    $('quenchBtn').hidden = !!lvl.free;
+    $('lvlTitle').firstChild.textContent = lvl.name.toUpperCase();
+    spec = Q.spectrum(flask);
+    try { localStorage.setItem('qd-level', i); } catch (e) {}
+    layout();
+    card(`<h2>${lvl.name}</h2>${goalLine()}<p>${lvl.intro}</p>
+      <p class="small">Heat sets the flask temperature. Inject adds precursor in one fast shot; Drip adds it slowly. Quench stops the reaction and ships the batch.</p>
+      <div class="btns"><button class="primary" id="go">Start</button></div>`);
+    $('go').onclick = closeCard;
+  }
+
+  function purity(s, target) {
+    let tot = 0, inb = 0;
+    for (let i = 0; i < s.y.length; i++) { const l = s.l0 + i * s.dl; tot += s.y[i]; if (Math.abs(l - target) <= BAND) inb += s.y[i]; }
+    return tot ? inb / tot : 0;
+  }
+
+  function quench() {
+    if (lvl.free || done) return;
+    if (!flask.injections) { card(`<h2>Nothing yet</h2><p>Inject some precursor first.</p><div class="btns"><button class="primary" id="go">OK</button></div>`); $('go').onclick = closeCard; return; }
+    done = true; running = false; flask.drip = false;
+    for (const b of ['injBtn', 'dripBtn']) $(b).disabled = true;
+    spec = Q.spectrum(flask);
+    const p = purity(spec, lvl.target), pct = Math.min(100, Math.round(100 * p / IDEAL)), n = stars(pct);
+    const z = Q.sizeStats(flask);
+    if (!best[lvl.id] || pct > best[lvl.id]) { best[lvl.id] = pct; saveBest(); }
+    const off = spec.lambda - lvl.target;
+    const why = n === 3 ? 'The customer is delighted.'
+      : Math.abs(off) > BAND ? (off > 0 ? 'Too red: the dots grew too big.' : 'Too blue: the dots are too small.')
+      : z.rsd > 0.12 ? 'Right colour, but the sizes are too mixed. The light isn’t pure.'
+      : 'Close. A little off the target colour.';
+    const next = lvl.index + 1 < LEVELS.length ? `<button class="primary" id="next">Next order</button>` : '';
+    card(`<h2>${lvl.name}</h2><div class="big">${pct}%</div><div class="stars">${starStr(n)}</div><p>${why}</p>
+      <p class="small">Peak ${spec.lambda} nm (target ${lvl.target}) · linewidth ${spec.fwhm} nm ·
+      ${(100 * p).toFixed(0)}% of the light within ±${BAND} nm · dots ${z.mean.toFixed(1)} nm ± ${(100 * z.rsd).toFixed(0)}% ·
+      ${Math.round(flask.t)} s reaction</p>
+      <div class="btns"><button id="retry">Retry</button>${next}</div>`);
+    $('retry').onclick = () => { closeCard(); loadLevel(lvl.index); closeCard(); };
+    if (next) $('next').onclick = () => loadLevel(lvl.index + 1);
+  }
+
+  $('menuBtn').onclick = () => {
+    const rows = LEVELS.map((L, i) => {
+      const sw = L.free ? '' : `<span class="swatch" style="width:12px;height:12px;margin-right:8px;background:${css(wlRGB(L.target))};color:${css(wlRGB(L.target))}"></span>`;
+      return `<button class="lvl" data-i="${i}"><span>${sw}${i + 1}. ${L.name}${L.free ? '' : ` · ${L.target} nm`}</span>
+        <span>${L.free ? '' : best[L.id] != null ? starStr(stars(best[L.id])) : ''}</span></button>`;
+    }).join('');
+    card(`<h2>Orders</h2>${rows}<p class="small" style="margin-top:14px">Also try <a href="../">Gyro</a> and <a href="../laser/">Laser Lab</a>.</p>`);
+    for (const b of document.querySelectorAll('.lvl')) b.onclick = () => loadLevel(+b.dataset.i);
+  };
+
+  // ---------- drawing ----------
+  function flaskPath(cx, cy, R, neckW, neckH) {
+    const a = Math.asin(neckW / 2 / R);
+    ctx.beginPath();
+    ctx.moveTo(cx - neckW / 2, cy - R * Math.cos(a) - neckH);
+    ctx.lineTo(cx - neckW / 2, cy - R * Math.cos(a));
+    ctx.arc(cx, cy, R, -Math.PI / 2 - a, -Math.PI / 2 + a, true);
+    ctx.lineTo(cx + neckW / 2, cy - R * Math.cos(a) - neckH);
+  }
+
+  function drawFlask(top, bottom) {
+    // leave room above the neck for two lines of readouts
+    const R = Math.max(40, Math.min(W * 0.27, (bottom - top - 14 - 84) / 2.73)), cx = W / 2;
+    const cy = bottom - R - 14, neckW = R * 0.42, neckH = R * 0.75;
+    const T = flask.T - 273;
+    // heating mantle
+    const heat = Math.max(0, Math.min(1, (T - 180) / 160));
+    const mg = ctx.createRadialGradient(cx, cy + R * 0.9, R * 0.2, cx, cy + R * 0.9, R * 1.6);
+    mg.addColorStop(0, `rgba(255,110,50,${0.35 * heat})`); mg.addColorStop(1, 'rgba(255,110,50,0)');
+    ctx.fillStyle = mg; ctx.fillRect(cx - R * 2, cy, R * 4, R * 2.2);
+    ctx.fillStyle = '#1b1e28';
+    ctx.beginPath(); ctx.ellipse(cx, cy + R * 0.55, R * 1.18, R * 0.62, 0, 0, Math.PI); ctx.fill();
+
+    // liquid
+    const liqTop = cy - R * 0.35;
+    const z = Q.sizeStats(flask);
+    let glow = 0, rgb = [255, 255, 255];
+    if (spec.peak > 0) {
+      rgb = wlRGB(spec.lambda);
+      glow = Math.min(1, Math.max(0, (z.mean - 1.5) / 1.2));
+    }
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, R - 3, 0, Math.PI * 2); ctx.clip();
+    ctx.fillStyle = 'rgba(205,180,90,0.16)';            // pale yellow precursor solution
+    ctx.fillRect(cx - R, liqTop, 2 * R, 2 * R);
+    if (glow > 0) {
+      const lg = ctx.createRadialGradient(cx, cy + R * 0.15, R * 0.1, cx, cy + R * 0.15, R * 1.1);
+      lg.addColorStop(0, css(rgb, 0.95 * glow)); lg.addColorStop(1, css(rgb, 0.35 * glow));
+      ctx.fillStyle = lg; ctx.fillRect(cx - R, liqTop, 2 * R, 2 * R);
+    }
+    // bubbles (boiling more vigorously when hot)
+    if (Math.random() < heat * 0.6) bubbles.push({ x: cx + (Math.random() - 0.5) * R * 1.4, y: cy + R * 0.8, r: 1 + Math.random() * 2.5, v: 0.6 + Math.random() * 1.2 });
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    for (let i = bubbles.length - 1; i >= 0; i--) {
+      const b = bubbles[i]; b.y -= b.v; b.x += (Math.random() - 0.5) * 0.6;
+      if (b.y < liqTop) { bubbles.splice(i, 1); continue; }
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+    if (glow > 0) {
+      const og = ctx.createRadialGradient(cx, cy, R * 0.6, cx, cy, R * 1.9);
+      og.addColorStop(0, css(rgb, 0.28 * glow)); og.addColorStop(1, css(rgb, 0));
+      ctx.fillStyle = og; ctx.beginPath(); ctx.arc(cx, cy, R * 1.9, 0, 7); ctx.fill();
+    }
+    // meniscus
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1;
+    const mw = Math.sqrt(R * R - (liqTop - cy) ** 2);
+    ctx.beginPath(); ctx.moveTo(cx - mw + 2, liqTop); ctx.lineTo(cx + mw - 2, liqTop); ctx.stroke();
+    // glass
+    flaskPath(cx, cy, R, neckW, neckH);
+    ctx.strokeStyle = 'rgba(210,225,240,0.55)'; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(cx, cy, R * 0.82, -2.6, -2.0); ctx.stroke();
+
+    // syringe drops on injection, drip from the neck
+    const neckTop = cy - R * Math.cos(Math.asin(neckW / 2 / R)) - neckH;
+    if (drops > 0) {
+      drops--;
+      ctx.fillStyle = 'rgba(230,230,200,0.8)';
+      for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(cx + (Math.random() - 0.5) * neckW * 0.4, neckTop + Math.random() * (liqTop - neckTop), 2, 0, 7); ctx.fill(); }
+    }
+    if (flask.drip && !done) {
+      const ph = (performance.now() / 600) % 1;
+      ctx.fillStyle = 'rgba(230,230,200,0.85)';
+      ctx.beginPath(); ctx.arc(cx, neckTop + ph * (liqTop - neckTop), 2.4, 0, 7); ctx.fill();
+    }
+
+    // readouts, centred above the flask
+    const ry = neckTop - 46;
+    ctx.textAlign = 'center';
+    if (!lvl.free) {
+      ctx.fillStyle = css(wlRGB(lvl.target)); ctx.font = '600 15px -apple-system, system-ui, sans-serif';
+      ctx.fillText(`Order: ${lvl.target} nm`, cx, ry - 22);
+    }
+    ctx.font = '600 14px -apple-system, system-ui, sans-serif'; ctx.fillStyle = '#ffb08a';
+    const parts = [`${Math.round(T)} \u00b0C`, `t = ${Math.round(flask.t)} s`];
+    if (z.n) parts.push(`dots ${z.mean.toFixed(1)} nm \u00b1${Math.round(100 * z.rsd)}%`);
+    ctx.fillStyle = '#cfd5e0'; ctx.font = '13px -apple-system, system-ui, sans-serif';
+    ctx.fillText(parts.join('   \u00b7   '), cx, ry);
+    if (!flask.injections) {
+      ctx.textAlign = 'center'; ctx.fillStyle = '#cfd5e0'; ctx.font = '14px -apple-system, system-ui, sans-serif';
+      ctx.fillText('Set the heat, then tap Inject', cx, bottom + 2);
+    }
+  }
+
+  function drawSpectrum(x0, y0, w, h) {
+    // axes
+    ctx.fillStyle = 'rgba(255,255,255,0.03)'; ctx.fillRect(x0, y0, w, h);
+    const X = l => x0 + (l - L0) / (L1 - L0) * w;
+    // rainbow strip under the axis
+    for (let l = L0; l < L1; l += 2) { ctx.fillStyle = css(wlRGB(l), 0.9); ctx.fillRect(X(l), y0 + h, Math.ceil(w / (L1 - L0) * 2) + 0.5, 4); }
+    ctx.fillStyle = '#8d96a8'; ctx.font = '11px -apple-system, system-ui, sans-serif'; ctx.textAlign = 'center';
+    for (let l = 450; l <= 700; l += 50) ctx.fillText(l, X(l), y0 + h + 17);
+    ctx.textAlign = 'right'; ctx.fillText('nm', x0 + w, y0 + h + 30);
+    // target band
+    if (!lvl.free) {
+      ctx.fillStyle = 'rgba(255,255,255,0.07)';
+      ctx.fillRect(X(lvl.target - BAND), y0, X(lvl.target + BAND) - X(lvl.target - BAND), h);
+      ctx.setLineDash([4, 4]); ctx.strokeStyle = css(wlRGB(lvl.target), 0.9); ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(X(lvl.target), y0); ctx.lineTo(X(lvl.target), y0 + h); ctx.stroke(); ctx.setLineDash([]);
+    }
+    // spectrum
+    if (spec.peak > 0) {
+      const sc = (h - 8) / spec.peak;
+      const grad = ctx.createLinearGradient(x0, 0, x0 + w, 0);
+      for (let l = L0; l <= L1; l += 20) grad.addColorStop((l - L0) / (L1 - L0), css(wlRGB(l), 0.55));
+      ctx.beginPath(); ctx.moveTo(X(L0), y0 + h);
+      for (let i = 0; i < spec.y.length; i++) ctx.lineTo(X(spec.l0 + i * spec.dl), y0 + h - spec.y[i] * sc);
+      ctx.lineTo(X(L1), y0 + h); ctx.closePath(); ctx.fillStyle = grad; ctx.fill();
+      ctx.beginPath();
+      for (let i = 0; i < spec.y.length; i++) { const x = X(spec.l0 + i * spec.dl), y = y0 + h - spec.y[i] * sc; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = '#eef1f6'; ctx.font = '600 13px -apple-system, system-ui, sans-serif'; ctx.textAlign = 'left';
+      ctx.fillText(`peak ${spec.lambda} nm · FWHM ${spec.fwhm} nm`, x0 + 6, y0 + 16);
+    } else {
+      ctx.fillStyle = '#5b6375'; ctx.font = '13px -apple-system, system-ui, sans-serif'; ctx.textAlign = 'left';
+      ctx.fillText('emission spectrum (under UV)', x0 + 6, y0 + 16);
+    }
+  }
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (!done && $('ov').hidden && (running || flask.drip || Math.abs(flask.T - flask.setT) > 0.5)) {
+      Q.step(flask, dt * SIM_PER_SEC);
+      spec = Q.spectrum(flask);
+    }
+    $('tempOut').textContent = `set ${Math.round(flask.setT - 273)} °C`;
+    ctx.fillStyle = '#06070b'; ctx.fillRect(0, 0, W, H);
+    const specH = Math.min(150, (panelTop - 80) * 0.3);
+    const specY = panelTop - specH - 42;
+    drawFlask(100, specY - 24);
+    drawSpectrum(16, specY, W - 32, specH);
+    requestAnimationFrame(frame);
+  }
+
+  addEventListener('resize', layout);
+  let start = 0;
+  try { start = Math.min(LEVELS.length - 1, +(localStorage.getItem('qd-level') || 0)); } catch (e) {}
+  loadLevel(start);
+  requestAnimationFrame(frame);
+
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('../sw.js').catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>

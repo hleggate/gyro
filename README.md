@@ -19,3 +19,10 @@ Beam controls, available on every level:
 
 - `laser/laser.js`: ablation model and scoring
 - `laser/index.html`: game, levels and drawing
+
+## Dot Foundry (`qdots/`)
+
+Grow CdSe quantum dots by hot injection and fill orders for exact emission colours. Nucleation follows classical theory (J ∝ exp(−B/ln²S)) in a short burst after each injection; dots grow by diffusion-limited growth with Gibbs–Thomson solubility, so small dots dissolve and big ones grow. Emission wavelength comes from the Yu et al. (2003) CdSe sizing curve plus a Stokes shift. Temperature sets how many nuclei form (and so the final size); a second hot injection nucleates a new population, while slow drip feeding grows the existing dots. Scored on colour purity: the fraction of emission within ±15 nm of the order.
+
+- `qdots/qd.js`: nucleation, growth and spectrum model
+- `qdots/index.html`: flask, spectrum and orders
