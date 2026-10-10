@@ -33,3 +33,10 @@ Run a 2 L stirred-tank bioreactor growing *Lactobacillus casei* on glucose, and 
 
 - `bio/ferment.js`: growth, acid production, death and pH model
 - `bio/index.html`: reactor, growth chart and orders
+
+## Free Path (`electrons/`)
+
+Push electrons through a phosphorus-doped silicon bar, 100 µm long and 10 µm across. A 400 nm window shows a Monte Carlo of the carriers: free flights accelerated by the field, interrupted by scattering off phonons (white), ionised donors (orange) and, in strong fields, optical-phonon emission (purple). The scattering time comes from the mobility (τ = μm*/q), so the drift you see matches the current. Low-field mobility follows Arora et al. (1982) in doping and temperature, velocity saturation the Caughey–Thomas form with Canali's fits, and the carrier densities a charge balance with a 45 meV donor level (so donors freeze out when cold) plus intrinsic electron–hole pairs (so lightly doped silicon conducts more when hot). The bar heats itself through a 60 K/W heat sink and burns out above 750 K. Five levels (hit a current, make a resistor, beat the speed limit, work at 77 K, make a temperature-proof resistor) plus free play.
+
+- `electrons/carrier.js`: carrier density, mobility, saturation and heating model, plus the Monte Carlo parameters
+- `electrons/index.html`: crystal view, charts and levels

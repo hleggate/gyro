@@ -1,5 +1,5 @@
 // Offline cache. Bump VERSION when files change so phones pick up the update.
-const VERSION = 'gyro-v7';
+const VERSION = 'gyro-v8';
 const FILES = ['./', 'index.html', 'physics.js', 'manifest.webmanifest',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
   'laser/', 'laser/index.html', 'laser/laser.js', 'laser/manifest.webmanifest',
@@ -7,7 +7,9 @@ const FILES = ['./', 'index.html', 'physics.js', 'manifest.webmanifest',
   'qdots/', 'qdots/index.html', 'qdots/qd.js', 'qdots/manifest.webmanifest',
   'qdots/icons/icon-180.png', 'qdots/icons/icon-192.png', 'qdots/icons/icon-512.png',
   'bio/', 'bio/index.html', 'bio/ferment.js', 'bio/manifest.webmanifest',
-  'bio/icons/icon-180.png', 'bio/icons/icon-192.png', 'bio/icons/icon-512.png'];
+  'bio/icons/icon-180.png', 'bio/icons/icon-192.png', 'bio/icons/icon-512.png',
+  'electrons/', 'electrons/index.html', 'electrons/carrier.js', 'electrons/manifest.webmanifest',
+  'electrons/icons/icon-180.png', 'electrons/icons/icon-192.png', 'electrons/icons/icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
 });

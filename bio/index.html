@@ -244,7 +244,7 @@
     const rows = LEVELS.map((L, i) => `<button class="lvl" data-i="${i}"><span>${i + 1}. ${L.name}</span>
         <span>${L.free ? '' : best[L.id] != null ? starStr(stars(best[L.id])) : ''}</span></button>`).join('');
     card(`<h2>Orders</h2>${rows}<p class="small" style="margin-top:14px">Also try <a href="../">Gyro</a>,
-      <a href="../laser/">Laser Lab</a> and <a href="../qdots/">Dot Foundry</a>.</p>`);
+      <a href="../laser/">Laser Lab</a>, <a href="../qdots/">Dot Foundry</a> and <a href="../electrons/">Free Path</a>.</p>`);
     for (const b of document.querySelectorAll('.lvl')) b.onclick = () => loadLevel(+b.dataset.i);
   };
 

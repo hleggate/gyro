@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Free Path</title>
+<meta name="description" content="Push electrons through a silicon bar: doping, mobility, scattering and velocity saturation.">
+<meta name="theme-color" content="#05080c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Free Path">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<style>
+  :root { --bg:#05080c; --fg:#eef1f6; --dim:#8d96a8; --acc:#6cb8ff; --warn:#ffb347; --line:#232b3c; --panel:rgba(13,17,26,.92); }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+    font:15px/1.35 -apple-system, system-ui, sans-serif; overflow:hidden; touch-action:none; overscroll-behavior:none;
+    -webkit-user-select:none; user-select:none; }
+  canvas { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  .top { position:fixed; left:0; right:0; top:0; padding:calc(env(safe-area-inset-top) + 10px) 16px 0;
+    display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+  .title { font-weight:700; font-size:17px; letter-spacing:.02em; }
+  .title small { display:block; font-weight:400; color:var(--dim); font-size:12px; letter-spacing:0; }
+  .panel { position:fixed; left:12px; right:12px; bottom:calc(env(safe-area-inset-bottom) + 12px);
+    background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:8px 10px 10px;
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
+  .row { display:flex; align-items:center; gap:6px; min-height:40px; }
+  .row[hidden] { display:none; }
+  .row label { font-size:14px; min-width:52px; }
+  .row output { font-size:13px; color:var(--dim); min-width:84px; text-align:right; font-variant-numeric:tabular-nums; }
+  .row button.nudge { padding:6px 0; width:30px; font-size:12px; border-radius:9px; color:var(--dim); }
+  input[type=range] { flex:1; min-width:0; accent-color:var(--acc); height:28px; }
+  button { appearance:none; border:1px solid var(--line); background:#131a27; color:var(--fg);
+    font:inherit; font-size:14px; padding:10px 8px; border-radius:11px; }
+  button:active { transform:scale(.96); }
+  button:disabled { opacity:.4; }
+  button.primary { background:var(--acc); border-color:var(--acc); color:#04182b; font-weight:600; }
+  .actions { display:flex; gap:8px; margin-top:6px; }
+  .actions button { flex:1; }
+  .actions button[hidden] { display:none; }
+  .overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:20px;
+    background:rgba(3,5,8,.72); backdrop-filter:blur(5px); -webkit-backdrop-filter:blur(5px); }
+  .overlay[hidden] { display:none; }
+  .card { width:100%; max-width:380px; max-height:90vh; overflow:auto; background:#0e131d; border:1px solid var(--line);
+    border-radius:18px; padding:20px; touch-action:pan-y; }
+  .card h2 { margin:0 0 4px; font-size:21px; }
+  .card .goal { font-size:14px; margin:0 0 10px; color:var(--acc); }
+  .card p { margin:8px 0; color:#cdd3df; }
+  .card .hint { color:#dbeeff; background:rgba(108,184,255,.10); border-radius:10px; padding:10px 12px; font-size:14px; }
+  .card .btns { display:flex; gap:8px; margin-top:14px; }
+  .card .btns button { flex:1; }
+  .card a { color:#9fc9ff; }
+  .lvl { display:flex; justify-content:space-between; align-items:center; width:100%; text-align:left; margin-top:8px; padding:12px 14px; }
+  .lvl span:last-child { color:var(--warn); letter-spacing:2px; }
+  .big { font-size:40px; font-weight:700; margin:6px 0 0; font-variant-numeric:tabular-nums; }
+  .stars { font-size:28px; color:var(--warn); letter-spacing:4px; }
+  .small { font-size:13px; color:var(--dim) !important; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="top">
+  <div class="title" id="lvlTitle">FREE PATH<small id="lvlSub">electrons in doped silicon</small></div>
+  <button id="menuBtn">Levels</button>
+</div>
+
+<div class="panel">
+  <div class="row" id="rowV">
+    <label for="volt">Voltage</label>
+    <button class="nudge" data-s="volt" data-d="-1">◀</button>
+    <input id="volt" type="range" min="-2" max="2.301" step="0.001" value="0">
+    <button class="nudge" data-s="volt" data-d="1">▶</button>
+    <output id="voltOut"></output>
+  </div>
+  <div class="row" id="rowN">
+    <label for="dope">Doping</label>
+    <button class="nudge" data-s="dope" data-d="-1">◀</button>
+    <input id="dope" type="range" min="13" max="19" step="0.001" value="16">
+    <button class="nudge" data-s="dope" data-d="1">▶</button>
+    <output id="dopeOut"></output>
+  </div>
+  <div class="row" id="rowT">
+    <label for="sink">Heat sink</label>
+    <button class="nudge" data-s="sink" data-d="-1">◀</button>
+    <input id="sink" type="range" min="40" max="600" step="1" value="300">
+    <button class="nudge" data-s="sink" data-d="1">▶</button>
+    <output id="sinkOut"></output>
+  </div>
+  <div class="actions">
+    <button id="helpBtn">Hint</button>
+    <button id="measBtn" class="primary">Measure</button>
+  </div>
+</div>
+
+<div class="overlay" id="ov" hidden><div class="card" id="card"></div></div>
+
+<script src="carrier.js"></script>
+<script>
+(() => {
+  const C = window.Carrier;
+  const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+  const $ = id => document.getElementById(id);
+  const PS_PER_SEC = 0.4;       // simulated picoseconds per real second in the crystal view
+  const BOX_NM = 400;           // width of the crystal view
+  const FONT = '-apple-system, system-ui, sans-serif';
+
+  const LEVELS = [
+    { id: 'ohm', name: 'First current', lock: { N: 1e16, T: 300 }, V: 1, Vmax: 20, chart: 'vE',
+      target: { kind: 'I', value: 1e-3 }, tol: [0.01, 0.03, 0.06],
+      goal: 'Push exactly 1.00 mA through the bar.',
+      intro: 'This is a bar of silicon 100 µm long and 10 µm across, doped with phosphorus. Each phosphorus atom (red +) gives up an electron (blue) that is free to roam the crystal. The view is a 400 nm window inside the bar. Turn up the voltage and the electrons drift toward the + contact.',
+      hint: 'Current = voltage ÷ resistance, and the readout shows the resistance. Look at the electrons, though: they zoom about at ~130 nm/ps from heat alone, but their drift is only a few nm/ps. Follow the bright one with the long trail. The current comes from that tiny bias, times 10¹⁶ electrons in every cm³.' },
+    { id: 'res', name: 'Make a resistor', lock: { V: 1, T: 300 }, N: 1e15, chart: 'vE',
+      target: { kind: 'R', value: 1000 }, tol: [0.01, 0.03, 0.06],
+      goal: 'Choose the doping that makes a 1.00 kΩ resistor.',
+      intro: 'More phosphorus means more free electrons. But every donor is also a charged ion that deflects electrons passing close by (orange flashes). Dope harder and the mobility, how easily the electrons drift, drops.',
+      hint: 'Last level the bar was about 5 kΩ at 10¹⁶ cm⁻³. Five times the electrons would give 1 kΩ if nothing else changed, but the mobility falls as you add ions, so you need a bit more than that.' },
+    { id: 'sat', name: 'Speed limit', lock: { N: 1e16, T: 300 }, V: 10, Vmax: 200, chart: 'vE',
+      target: { kind: 'I', value: 8e-3 }, tol: [0.01, 0.03, 0.06],
+      goal: 'Push 8.00 mA through the same bar as level 1.',
+      intro: 'So far it has been Ohm’s law: double the voltage, double the current. Push hard enough and that breaks. In a strong field, electrons gain energy faster than the lattice can take it off them. Above about 60 meV they shed it by emitting optical phonons (purple flashes), and their drift speed tops out near 10⁷ cm/s.',
+      hint: 'Ohm’s law says 8 mA needs about 41 V. Watch the chart: past the knee the drift velocity flattens, so you need far more. The bar also heats up (it’s burning most of a watt), which lowers the mobility further. Let the temperature settle before you measure.' },
+    { id: 'ln2', name: 'Liquid nitrogen', lock: { V: 0.5, T: 77 }, N: 1e15, chart: 'RT',
+      target: { kind: 'R', value: 2000 }, tol: [0.01, 0.03, 0.06],
+      goal: 'At 77 K, make a 2.00 kΩ resistor.',
+      intro: 'The bar is dunked in liquid nitrogen. The lattice barely vibrates, so phonon scattering nearly vanishes and electrons fly much farther between collisions. The catch: with so little thermal energy, some electrons drop back onto their donors (grey atoms with a bound electron). That’s freeze-out.',
+      hint: 'With phonons quiet, scattering off the donor ions dominates, so the mobility is very sensitive to doping. At room temperature 2 kΩ needs about 3 × 10¹⁶ cm⁻³. Cold, you need roughly ten times less.' },
+    { id: 'flat', name: 'Temperature-proof', lock: { V: 0.1, T: 300 }, N: 1e16, chart: 'RT', flat: true,
+      target: { kind: 'flat' }, tol: [0.02, 0.05, 0.10],
+      goal: 'Make a resistor with the same resistance at 300 K and 500 K.',
+      intro: 'Doped silicon’s resistance rises as it warms, because phonons scatter the electrons more. But heat also shakes electrons loose from the silicon bonds, making electron–hole pairs (orange holes). Those extra carriers lower the resistance. Find the doping where the two effects cancel between 300 K and 500 K.',
+      hint: 'The chart shows R against temperature for your doping, with the 300 K and 500 K points marked. Heavily doped, the curve climbs. Very lightly doped, intrinsic carriers swamp the donors and it falls steeply when hot. Somewhere between, the two ends match.' },
+    { id: 'free', name: 'Free play', free: true, V: 1, Vmax: 200, N: 1e16, T: 300, chart: 'vE',
+      goal: 'No target. Experiment.',
+      intro: 'Everything unlocked, including the heat sink (40 K to 600 K). Try very light doping when hot, very heavy doping when cold, and see how hard you can drive the bar before it burns out.',
+      hint: 'Tap the chart to switch between drift velocity vs field and resistance vs temperature.' },
+  ];
+
+  let best = {};
+  try { best = JSON.parse(localStorage.getItem('fp-best') || '{}'); } catch (e) {}
+  const saveBest = () => { try { localStorage.setItem('fp-best', JSON.stringify(best)); } catch (e) {} };
+  const starStr = n => '★'.repeat(n) + '☆'.repeat(3 - n);
+
+  // ---------- formatting ----------
+  const SUP = { '-': '⁻', 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹' };
+  const sup = s => String(s).split('').map(c => SUP[c] || c).join('');
+  function sci(x, d = 1) {
+    if (!(x > 0)) return '0';
+    let e = Math.floor(Math.log10(x)), m = +(x / 10 ** e).toFixed(d);
+    if (m >= 10) { m /= 10; e++; }
+    return `${m.toFixed(d)} × 10${sup(e)}`;
+  }
+  function decade(x, unit) {            // axis label for a power of ten: 1 kΩ, 10 kΩ, 100 kΩ, 1 MΩ
+    const e = Math.round(Math.log10(x)), k = Math.floor(e / 3), p = ['n', 'µ', 'm', '', 'k', 'M', 'G'][k + 3] ?? '';
+    return `${10 ** (e - 3 * k)}${p}${unit}`;
+  }
+  function eng(x, unit, d = 3) {
+    const a = Math.abs(x);
+    const pre = [[1e6, 'M'], [1e3, 'k'], [1, ''], [1e-3, 'm'], [1e-6, 'µ'], [1e-9, 'n']];
+    for (const [f, p] of pre) if (a >= f * 0.9995) return `${(x / f).toPrecision(d)} ${p}${unit}`;
+    return `${(x / 1e-9).toPrecision(d)} n${unit}`;
+  }
+
+  // ---------- state ----------
+  let lvl, bar, st, mic, chartMode = 'vE', rtCache = null, measured = false;
+  let parts = [], donors = [], flashes = [];
+
+  // ---------- layout ----------
+  let W, H, dpr, panelTop, topBottom;
+  function layout() {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    panelTop = document.querySelector('.panel').getBoundingClientRect().top;
+    topBottom = document.querySelector('.top').getBoundingClientRect().bottom;
+  }
+  let box = { x: 0, y: 0, w: 1, h: 1, s: 1 };   // crystal view, s = px per nm
+  let chartR = { x: 0, y: 0, w: 1, h: 1 };
+  function regions() {
+    const top = topBottom + 10, avail = panelTop - top - 10;
+    const bh = Math.max(120, avail * 0.48);
+    box = { x: 22, y: top, w: W - 44, h: bh };
+    box.s = box.w / BOX_NM;
+    const cy = top + bh + 80;
+    chartR = { x: 52, y: cy, w: W - 68, h: Math.max(60, panelTop - cy - 34) };
+  }
+
+  // ---------- sliders ----------
+  const sl = { volt: $('volt'), dope: $('dope'), sink: $('sink') };
+  const NUDGE = { volt: 0.002, dope: 0.002, sink: 1 };
+  function readSliders() {
+    if (!lvl.lock || lvl.lock.V == null) bar.V = 10 ** +sl.volt.value;
+    if (!lvl.lock || lvl.lock.N == null) bar.N = 10 ** +sl.dope.value;
+    if (!lvl.lock || lvl.lock.T == null) bar.Tsink = +sl.sink.value;
+    $('voltOut').textContent = `${bar.V < 1 ? bar.V.toFixed(3) : bar.V < 10 ? bar.V.toFixed(3) : bar.V.toFixed(1)} V`;
+    $('dopeOut').textContent = `${sci(bar.N, 2)}`;
+    $('sinkOut').textContent = `${Math.round(bar.Tsink)} K`;
+    measured = false;
+  }
+  for (const k of Object.keys(sl)) sl[k].addEventListener('input', readSliders);
+  for (const b of document.querySelectorAll('.nudge')) {
+    let iv = null, to = null;
+    const bump = () => { const s = sl[b.dataset.s]; s.value = Math.min(+s.max, Math.max(+s.min, +s.value + b.dataset.d * NUDGE[b.dataset.s])); readSliders(); };
+    const stop = () => { clearTimeout(to); clearInterval(iv); to = iv = null; };
+    b.addEventListener('pointerdown', e => { e.preventDefault(); bump(); to = setTimeout(() => { iv = setInterval(bump, 60); }, 350); });
+    for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, stop);
+  }
+
+  // ---------- cards ----------
+  function card(html) { $('card').innerHTML = html; $('ov').hidden = false; }
+  function closeCard() { $('ov').hidden = true; }
+  $('ov').addEventListener('pointerdown', e => { if (e.target === $('ov')) closeCard(); });
+  const okCard = (title, body) => { card(`<h2>${title}</h2>${body}<div class="btns"><button class="primary" id="go">OK</button></div>`); $('go').onclick = closeCard; };
+
+  $('helpBtn').onclick = () => okCard('Hint', `<p class="hint">${lvl.hint}</p>
+    <p class="small">Mobility from Arora <i>et al.</i> (1982), velocity saturation from Canali <i>et al.</i> (1975), donor freeze-out from the charge balance with a 45 meV phosphorus level. The animation runs a Monte Carlo of free flights and scattering, slowed to ${PS_PER_SEC} ps per second.</p>`);
+
+  function loadLevel(i) {
+    lvl = LEVELS[i]; lvl.index = i;
+    const lk = lvl.lock || {};
+    const N = lk.N ?? lvl.N, T = lk.T ?? lvl.T ?? 300, V = lk.V ?? lvl.V;
+    bar = C.makeBar(N, T, V);
+    sl.volt.max = Math.log10(lvl.Vmax || 200).toFixed(3);
+    sl.volt.value = Math.log10(V); sl.dope.value = Math.log10(N); sl.sink.value = T;
+    $('rowV').hidden = lk.V != null; $('rowN').hidden = lk.N != null; $('rowT').hidden = lk.T != null;
+    $('measBtn').hidden = !!lvl.free;
+    chartMode = lvl.chart; rtCache = null;
+    $('lvlTitle').firstChild.textContent = lvl.name.toUpperCase();
+    const fixed = [];
+    if (lk.N != null) fixed.push(`doping ${sci(lk.N, 0)} cm⁻³`);
+    if (lk.V != null) fixed.push(`${lk.V} V`);
+    if (lk.T != null) fixed.push(`${lk.T} K`);
+    $('lvlSub').textContent = fixed.length ? fixed.join(' · ') : 'electrons in doped silicon';
+    readSliders();
+    st = C.state(bar.N, bar.T, bar.V);
+    parts = []; donors = []; flashes = [];
+    try { localStorage.setItem('fp-level', i); } catch (e) {}
+    layout(); regions();
+    card(`<h2>${lvl.name}</h2><p class="goal">${lvl.goal}</p><p>${lvl.intro}</p>
+      <div class="btns"><button class="primary" id="go">Start</button></div>`);
+    $('go').onclick = closeCard;
+  }
+
+  // ---------- measuring ----------
+  function reading() {
+    const t = lvl.target;
+    if (t.kind === 'I') return { val: st.I, target: t.value, txt: eng(st.I, 'A', 4), ttxt: eng(t.value, 'A', 3) };
+    if (t.kind === 'R') return { val: st.R, target: t.value, txt: eng(st.R, 'Ω', 4), ttxt: eng(t.value, 'Ω', 3) };
+    const r3 = C.R0(bar.N, 300), r5 = C.R0(bar.N, 500);
+    return { val: r5 / r3, target: 1, txt: `${(100 * (r5 / r3 - 1)).toFixed(1)}%`, r3, r5 };
+  }
+  $('measBtn').onclick = () => {
+    if (lvl.free) return;
+    if (Math.abs(bar.dTdt) > 1) { okCard('Still warming up', `<p>The bar is at ${Math.round(bar.T)} K and still changing by ${Math.abs(bar.dTdt).toFixed(0)} K/s. Wait for it to settle, then measure.</p>`); return; }
+    const r = reading(), err = Math.abs(r.val / r.target - 1);
+    const n = err <= lvl.tol[0] ? 3 : err <= lvl.tol[1] ? 2 : err <= lvl.tol[2] ? 1 : 0;
+    if (best[lvl.id] == null || n > best[lvl.id]) { best[lvl.id] = n; saveBest(); }
+    let why, detail;
+    if (lvl.target.kind === 'flat') {
+      why = n === 3 ? 'Rock steady. A real temperature-compensated resistor.'
+        : r.val > 1 ? 'Still rises when hot: phonons win. Use less doping so intrinsic carriers can cancel it.'
+        : 'Falls when hot: intrinsic carriers win. Use more doping.';
+      detail = `R = ${eng(r.r3, 'Ω', 3)} at 300 K and ${eng(r.r5, 'Ω', 3)} at 500 K · doping ${sci(bar.N, 2)} cm⁻³`;
+    } else {
+      const off = r.val / r.target - 1;
+      why = n === 3 ? 'Spot on.' : `${Math.abs(100 * off).toFixed(1)}% ${off > 0 ? 'high' : 'low'}.`;
+      detail = `${eng(bar.V, 'V', 3)} across ${eng(st.R, 'Ω', 3)} · ${eng(st.I, 'A', 3)} · bar at ${Math.round(bar.T)} K ·
+        n = ${sci(st.n, 1)} cm⁻³ · μ = ${Math.round(st.muN)} cm²/Vs · drift ${(st.vn / 1e5).toFixed(1)} km/s`;
+    }
+    const next = lvl.index + 1 < LEVELS.length ? `<button class="primary" id="next">Next</button>` : '';
+    card(`<h2>${lvl.name}</h2><div class="big">${r.txt}</div>
+      ${r.ttxt ? `<p class="small" style="margin-top:0">target ${r.ttxt}</p>` : `<p class="small" style="margin-top:0">change from 300 K to 500 K</p>`}
+      <div class="stars">${starStr(n)}</div><p>${why}</p><p class="small">${detail}</p>
+      <div class="btns"><button id="retry">Keep tuning</button>${next}</div>`);
+    $('retry').onclick = closeCard;
+    if (next) $('next').onclick = () => loadLevel(lvl.index + 1);
+  };
+
+  $('menuBtn').onclick = () => {
+    const rows = LEVELS.map((L, i) => `<button class="lvl" data-i="${i}"><span>${i + 1}. ${L.name}</span>
+      <span>${L.free ? '' : best[L.id] != null ? starStr(best[L.id]) : ''}</span></button>`).join('');
+    card(`<h2>Levels</h2>${rows}<p class="small" style="margin-top:14px">Also try <a href="../">Gyro</a>, <a href="../laser/">Laser Lab</a>, <a href="../qdots/">Dot Foundry</a> and <a href="../bio/">Lacto Works</a>.</p>`);
+    for (const b of document.querySelectorAll('.lvl')) b.onclick = () => loadLevel(+b.dataset.i);
+  };
+
+  cv.addEventListener('pointerdown', e => {
+    if (!lvl.free) return;
+    if (e.clientY > chartR.y - 30 && e.clientY < chartR.y + chartR.h + 30) chartMode = chartMode === 'vE' ? 'RT' : 'vE';
+  });
+
+  // ---------- Monte Carlo picture ----------
+  const visCount = c => c > 1e11 ? Math.max(1, Math.min(60, Math.round(5 * (Math.log10(c) - 11)))) : 0;
+  const gauss = () => { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+  function newPart(hole, m) {
+    const hNm = box.h / box.s;
+    return { x: Math.random() * BOX_NM, y: Math.random() * hNm, vx: gauss() * m.vth, vy: gauss() * m.vth,
+      hole, trail: [], hi: false, age: 0 };
+  }
+  function syncDonors() {
+    const want = Math.max(0, Math.min(36, Math.round(4 * (Math.log10(bar.N) - 12))));
+    const hNm = box.h / box.s;
+    while (donors.length < want) donors.push({ x: Math.random() * BOX_NM, y: Math.random() * hNm, r: Math.random(), ph: Math.random() * 7, flash: 0 });
+    donors.length = want;
+    for (const d of donors) d.ion = d.r < st.ion;
+  }
+  function syncParts() {
+    const ne = visCount(st.n), nh = visCount(st.p);
+    let ce = 0, ch = 0;
+    for (const p of parts) p.hole ? ch++ : ce++;
+    // add or remove gradually so pair generation and freeze-out look gradual
+    if (ce < ne && Math.random() < 0.3) parts.push(newPart(false, mic.e));
+    if (ch < nh && Math.random() < 0.3) parts.push(newPart(true, mic.h));
+    if (ce > ne && Math.random() < 0.3) { const i = parts.findIndex(p => !p.hole && !p.hi); if (i >= 0) parts.splice(i, 1); }
+    if (ch > nh && Math.random() < 0.3) { const i = parts.findIndex(p => p.hole); if (i >= 0) parts.splice(i, 1); }
+    if (!parts.some(p => p.hi)) { const p = parts.find(p => !p.hole); if (p) { p.hi = true; p.trail = []; } }
+  }
+  function scatterAt(p, m) {
+    const r = Math.random();
+    if (r < m.pImp && donors.some(d => d.ion)) {
+      let bd = null, bdist = 1e9;
+      for (const d of donors) if (d.ion) { const dd = (d.x - p.x) ** 2 + (d.y - p.y) ** 2; if (dd < bdist) { bdist = dd; bd = d; } }
+      if (bd && bdist < 60 * 60) bd.flash = 1;
+      flashes.push({ x: p.x, y: p.y, t: 0, k: 'imp' });
+    } else if (r < m.pImp + m.pHot) flashes.push({ x: p.x, y: p.y, t: 0, k: 'hot' });
+    else if (Math.random() < 0.5) flashes.push({ x: p.x, y: p.y, t: 0, k: 'lat' });
+    p.vx = gauss() * m.vth; p.vy = gauss() * m.vth;
+  }
+  function stepParts(dtReal) {
+    const hNm = box.h / box.s;
+    let dt = dtReal * PS_PER_SEC;
+    const tmin = Math.min(mic.e.tau, mic.h.tau);
+    const nsub = Math.min(30, Math.max(1, Math.ceil(dt / (tmin / 2))));
+    const h = dt / nsub;
+    for (const p of parts) {
+      const m = p.hole ? mic.h : mic.e, a = p.hole ? -m.acc : m.acc;
+      const pScat = 1 - Math.exp(-h / m.tau);
+      for (let k = 0; k < nsub; k++) {
+        p.vx += a * h; p.x += p.vx * h; p.y += p.vy * h;
+        if (Math.random() < pScat) scatterAt(p, m);
+      }
+      if (p.x > BOX_NM) { p.x -= BOX_NM; p.trail = []; }
+      else if (p.x < 0) { p.x += BOX_NM; p.trail = []; }
+      if (p.y > hNm) { p.y -= hNm; p.trail = []; } else if (p.y < 0) { p.y += hNm; p.trail = []; }
+      p.trail.push(p.x, p.y);
+      const maxT = p.hi ? 900 : 24;
+      if (p.trail.length > maxT) p.trail.splice(0, p.trail.length - maxT);
+    }
+    for (const f of flashes) f.t += dtReal;
+    flashes = flashes.filter(f => f.t < 0.45).slice(-80);
+    for (const d of donors) d.flash = Math.max(0, d.flash - dtReal * 2.5);
+  }
+
+  // ---------- drawing ----------
+  function drawCrystal(now) {
+    const { x: X0, y: Y0, w, h, s } = box;
+    ctx.save();
+    ctx.fillStyle = '#0a0f17'; ctx.fillRect(X0, Y0, w, h);
+    ctx.beginPath(); ctx.rect(X0, Y0, w, h); ctx.clip();
+    // lattice (schematic): vibration amplitude grows as √T
+    const amp = 1.3 * Math.sqrt(bar.T / 300), gap = 20;
+    ctx.fillStyle = 'rgba(150,170,200,0.22)';
+    let j = 0;
+    for (let y = Y0 + gap / 2; y < Y0 + h; y += gap, j++) for (let x = X0 + (j % 2 ? gap / 2 : 0) + gap / 4; x < X0 + w; x += gap) {
+      const ph = x * 0.37 + y * 0.71;
+      ctx.beginPath(); ctx.arc(x + amp * Math.sin(now * 0.021 + ph), y + amp * Math.cos(now * 0.017 + ph * 1.3), 1.6, 0, 7); ctx.fill();
+    }
+    // donors
+    for (const d of donors) {
+      const x = X0 + d.x * s, y = Y0 + d.y * s;
+      if (d.ion) {
+        if (d.flash > 0) { ctx.fillStyle = `rgba(255,170,80,${0.45 * d.flash})`; ctx.beginPath(); ctx.arc(x, y, 6 + 10 * (1 - d.flash), 0, 7); ctx.fill(); }
+        ctx.fillStyle = '#ff6b6b'; ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill();
+        ctx.strokeStyle = '#2a0b0b'; ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.moveTo(x - 2.8, y); ctx.lineTo(x + 2.8, y); ctx.moveTo(x, y - 2.8); ctx.lineTo(x, y + 2.8); ctx.stroke();
+      } else {
+        ctx.fillStyle = '#6b7385'; ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill();
+        const a = now * 0.004 + d.ph;
+        ctx.strokeStyle = 'rgba(108,184,255,0.25)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.stroke();
+        ctx.fillStyle = '#6cb8ff'; ctx.beginPath(); ctx.arc(x + 9 * Math.cos(a), y + 9 * Math.sin(a), 2.2, 0, 7); ctx.fill();
+      }
+    }
+    // scattering flashes
+    for (const f of flashes) {
+      const x = X0 + f.x * s, y = Y0 + f.y * s, k = f.t / 0.45;
+      const col = f.k === 'imp' ? '255,170,80' : f.k === 'hot' ? '200,120,255' : '220,230,255';
+      ctx.strokeStyle = `rgba(${col},${(f.k === 'lat' ? 0.35 : 0.8) * (1 - k)})`; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(x, y, 2 + 9 * k, 0, 7); ctx.stroke();
+    }
+    // carriers
+    for (const p of parts) {
+      const m = p.hole ? mic.h : mic.e;
+      const hot = Math.min(1, Math.max(0, (m.Te - bar.T) / 600));
+      const col = p.hole ? '255,159,90' : `${Math.round(108 + 120 * hot)},${Math.round(184 + 50 * hot)},255`;
+      if (p.trail.length > 3) {
+        ctx.strokeStyle = `rgba(${col},${p.hi ? 0.7 : 0.28})`; ctx.lineWidth = p.hi ? 1.4 : 1;
+        ctx.beginPath(); ctx.moveTo(X0 + p.trail[0] * s, Y0 + p.trail[1] * s);
+        for (let i = 2; i < p.trail.length; i += 2) ctx.lineTo(X0 + p.trail[i] * s, Y0 + p.trail[i + 1] * s);
+        ctx.stroke();
+      }
+      const x = X0 + p.x * s, y = Y0 + p.y * s;
+      ctx.fillStyle = `rgba(${col},0.22)`; ctx.beginPath(); ctx.arc(x, y, p.hi ? 8 : 6, 0, 7); ctx.fill();
+      ctx.fillStyle = p.hole ? '#0a0f17' : `rgb(${col})`;
+      ctx.beginPath(); ctx.arc(x, y, p.hi ? 3.6 : 3, 0, 7); ctx.fill();
+      if (p.hole) { ctx.strokeStyle = `rgb(${col})`; ctx.lineWidth = 1.5; ctx.stroke(); }
+    }
+    ctx.restore();
+    // contacts
+    ctx.fillStyle = '#9aa3b4';
+    ctx.fillRect(X0 - 12, Y0, 9, h); ctx.fillRect(X0 + w + 3, Y0, 9, h);
+    ctx.font = `700 15px ${FONT}`; ctx.textAlign = 'center'; ctx.fillStyle = '#0a0f17';
+    ctx.fillText('−', X0 - 7.5, Y0 + h / 2 + 5); ctx.fillText('+', X0 + w + 7.5, Y0 + h / 2 + 5);
+    // scale bar and micro readouts
+    ctx.fillStyle = '#cfd5e0'; ctx.fillRect(X0 + 8, Y0 + h - 8, 100 * s, 2);
+    ctx.font = `11px ${FONT}`; ctx.textAlign = 'left';
+    ctx.fillText('100 nm', X0 + 12 + 100 * s, Y0 + h - 5);
+    if (bar.V > 0.02) {
+      ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(207,213,224,0.85)'; ctx.font = `12px ${FONT}`;
+      ctx.fillText(`E = ${eng(st.E * 100, 'V/m', 3)}  ←      electrons →`, X0 + 6, Y0 + 15);
+    }
+  }
+
+  function drawReadouts() {
+    const y = box.y + box.h + 24, cx = W / 2;
+    ctx.textAlign = 'center';
+    let main, col = '#eef1f6';
+    if (!lvl.free && lvl.target.kind === 'I') {
+      main = `I = ${eng(st.I, 'A', 4)}   (target ${eng(lvl.target.value, 'A', 3)})`;
+    } else if (!lvl.free && lvl.target.kind === 'R') {
+      main = `R = ${eng(st.R, 'Ω', 4)}   (target ${eng(lvl.target.value, 'Ω', 3)})`;
+    } else if (lvl.flat) {
+      const r3 = C.R0(bar.N, 300), r5 = C.R0(bar.N, 500), d = 100 * (r5 / r3 - 1);
+      main = `300 K → 500 K: R changes ${d >= 0 ? '+' : ''}${d.toFixed(1)}%`;
+    } else main = `I = ${eng(st.I, 'A', 3)}   ·   P = ${eng(st.P, 'W', 3)}`;
+    ctx.font = `600 15px ${FONT}`; ctx.fillStyle = col; ctx.fillText(main, cx, y);
+    const hot = bar.T > 450 ? '#ff8a5c' : '#cfd5e0';
+    ctx.font = `13px ${FONT}`; ctx.fillStyle = hot;
+    const n2 = `${eng(bar.V, 'V', 3)} · ${eng(st.R, 'Ω', 3)} · bar ${Math.round(bar.T)} K · n ${sci(st.n, 1)} cm⁻³ · μ ${Math.round(st.muN)}`;
+    ctx.fillText(n2, cx, y + 20);
+    const ratio = mic.e.drift / (mic.e.vth * Math.sqrt(2)), mfp = mic.e.mfp;
+    ctx.fillStyle = '#8d96a8'; ctx.font = `12px ${FONT}`;
+    ctx.fillText(`free path ${mfp < 10 ? mfp.toFixed(1) : Math.round(mfp)} nm · drift is ${ratio < 0.1 ? (100 * ratio).toFixed(1) : Math.round(100 * ratio)}% of thermal speed`, cx, y + 38);
+  }
+
+  function axes(x0, y0, w, h, xlab, ylab) {
+    ctx.fillStyle = 'rgba(255,255,255,0.03)'; ctx.fillRect(x0, y0, w, h);
+    ctx.fillStyle = '#8d96a8'; ctx.font = `11px ${FONT}`;
+    ctx.textAlign = 'right'; ctx.fillText(xlab, x0 + w, y0 + h + 28);
+    ctx.save(); ctx.translate(x0 - 38, y0 + h / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.fillText(ylab, 0, 0); ctx.restore();
+  }
+
+  function drawVE() {
+    const { x: x0, y: y0, w, h } = chartR;
+    const E0 = 1, E1 = 3e4, v0 = 1e3, v1 = 3e7;
+    const X = E => x0 + Math.log(E / E0) / Math.log(E1 / E0) * w;
+    const Y = v => y0 + h - Math.log(Math.max(v0, Math.min(v1, v)) / v0) / Math.log(v1 / v0) * h;
+    axes(x0, y0, w, h, 'field (V/cm)', 'drift (cm/s)');
+    ctx.font = `11px ${FONT}`; ctx.textAlign = 'center'; ctx.fillStyle = '#8d96a8';
+    for (let e = 0; e <= 4; e++) { const xx = X(10 ** e); ctx.fillText(`10${sup(e)}`, xx, y0 + h + 14); ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(xx, y0, 1, h); ctx.fillStyle = '#8d96a8'; }
+    ctx.textAlign = 'right';
+    for (let e = 3; e <= 7; e++) ctx.fillText(`10${sup(e)}`, x0 - 4, Y(10 ** e) + 4);
+    // Ohm's law line and saturation
+    ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(X(E0), Y(st.muN * E0)); ctx.lineTo(X(E1), Y(st.muN * E1)); ctx.stroke();
+    ctx.strokeStyle = 'rgba(200,120,255,0.55)';
+    ctx.beginPath(); ctx.moveTo(x0, Y(st.vsat)); ctx.lineTo(x0 + w, Y(st.vsat)); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(200,120,255,0.8)'; ctx.textAlign = 'left'; ctx.fillText('saturation', x0 + 4, Y(st.vsat) - 4);
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.textAlign = 'right';
+    const lx = X(20), ly = Y(st.muN * 20) - 10; if (ly > y0 + 24) ctx.fillText('Ohm’s law', lx, ly);
+    // electron curve
+    ctx.strokeStyle = '#6cb8ff'; ctx.lineWidth = 2; ctx.beginPath();
+    for (let i = 0; i <= 80; i++) { const E = E0 * (E1 / E0) ** (i / 80), v = C.drift(st.muN, E, bar.T, false); i ? ctx.lineTo(X(E), Y(v)) : ctx.moveTo(X(E), Y(v)); }
+    ctx.stroke();
+    if (st.E >= E0) {
+      const px = X(Math.min(E1, st.E)), py = Y(st.vn);
+      ctx.fillStyle = 'rgba(108,184,255,0.3)'; ctx.beginPath(); ctx.arc(px, py, 9, 0, 7); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(px, py, 4, 0, 7); ctx.fill();
+    }
+    if (lvl.free) { ctx.fillStyle = '#5b6375'; ctx.textAlign = 'right'; ctx.fillText('tap to switch', x0 + w - 4, y0 + 14); }
+  }
+
+  function drawRT() {
+    const { x: x0, y: y0, w, h } = chartR;
+    const T0 = 40, T1 = 600;
+    if (!rtCache || rtCache.N !== bar.N) {
+      const pts = [];
+      for (let i = 0; i <= 70; i++) { const T = T0 + (T1 - T0) * i / 70; pts.push([T, C.R0(bar.N, T)]); }
+      rtCache = { N: bar.N, pts };
+    }
+    let rmin = Infinity, rmax = 0;
+    for (const [, r] of rtCache.pts) { rmin = Math.min(rmin, r); rmax = Math.max(rmax, r); }
+    if (lvl.target && lvl.target.kind === 'R') { rmin = Math.min(rmin, lvl.target.value); rmax = Math.max(rmax, lvl.target.value); }
+    let l0 = Math.floor(Math.log10(rmin)), l1 = Math.ceil(Math.log10(rmax)); if (l1 - l0 < 2) l1 = l0 + 2;
+    const X = T => x0 + (T - T0) / (T1 - T0) * w;
+    const Y = r => y0 + h - (Math.log10(r) - l0) / (l1 - l0) * h;
+    axes(x0, y0, w, h, 'temperature (K)', 'resistance');
+    ctx.font = `11px ${FONT}`; ctx.textAlign = 'center'; ctx.fillStyle = '#8d96a8';
+    for (const T of [77, 200, 300, 400, 500, 600]) ctx.fillText(T, X(T), y0 + h + 14);
+    ctx.textAlign = 'right';
+    const step = l1 - l0 > 4 ? 2 : 1;
+    for (let l = l0; l <= l1; l += step) ctx.fillText(decade(10 ** l, 'Ω'), x0 - 4, Y(10 ** l) + 4);
+    if (lvl.target && lvl.target.kind === 'R') {
+      ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(255,179,71,0.7)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x0, Y(lvl.target.value)); ctx.lineTo(x0 + w, Y(lvl.target.value)); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(255,179,71,0.9)'; ctx.textAlign = 'left'; ctx.fillText('target', x0 + 4, Y(lvl.target.value) - 4);
+    }
+    ctx.strokeStyle = '#6cb8ff'; ctx.lineWidth = 2; ctx.beginPath();
+    rtCache.pts.forEach(([T, r], i) => i ? ctx.lineTo(X(T), Y(r)) : ctx.moveTo(X(T), Y(r))); ctx.stroke();
+    if (lvl.flat) {
+      for (const T of [300, 500]) {
+        const r = C.R0(bar.N, T);
+        ctx.setLineDash([3, 4]); ctx.strokeStyle = 'rgba(255,179,71,0.5)';
+        ctx.beginPath(); ctx.moveTo(X(T), y0); ctx.lineTo(X(T), y0 + h); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = '#ffb347'; ctx.beginPath(); ctx.arc(X(T), Y(r), 4.5, 0, 7); ctx.fill();
+      }
+    } else {
+      const px = X(Math.min(T1, Math.max(T0, bar.T))), py = Y(st.R0);
+      ctx.fillStyle = 'rgba(108,184,255,0.3)'; ctx.beginPath(); ctx.arc(px, py, 9, 0, 7); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(px, py, 4, 0, 7); ctx.fill();
+    }
+    if (lvl.free) { ctx.fillStyle = '#5b6375'; ctx.textAlign = 'right'; ctx.fillText('tap to switch', x0 + w - 4, y0 + 14); }
+  }
+
+  // ---------- loop ----------
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if ($('ov').hidden) st = C.stepBar(bar, dt); else st = C.state(bar.N, bar.T, bar.V);
+    if (bar.burnt) {
+      bar.burnt = false; bar.T = bar.Tsink; bar.V = 1; sl.volt.value = 0; readSliders();
+      okCard('Burnt out!', `<p>The bar passed 750 K. At that point the contacts fail and the aluminium wiring starts to alloy into the silicon.</p>
+        <p class="small">It was dissipating far more than the heat sink could carry away (60 K per watt). Heavily doped bars carry big currents, and the power goes as V × I.</p>`);
+    }
+    mic = C.micro(st);
+    syncDonors(); syncParts();
+    if ($('ov').hidden) stepParts(dt);
+    ctx.fillStyle = '#05080c'; ctx.fillRect(0, 0, W, H);
+    drawCrystal(now);
+    drawReadouts();
+    chartMode === 'vE' ? drawVE() : drawRT();
+    requestAnimationFrame(frame);
+  }
+
+  addEventListener('resize', () => { layout(); regions(); parts = []; donors = []; });
+  let start = 0;
+  try { start = Math.min(LEVELS.length - 1, +(localStorage.getItem('fp-level') || 0)); } catch (e) {}
+  loadLevel(start);
+  requestAnimationFrame(frame);
+
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('../sw.js').catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
