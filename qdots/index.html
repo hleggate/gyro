@@ -224,7 +224,7 @@
       return `<button class="lvl" data-i="${i}"><span>${sw}${i + 1}. ${L.name}${L.free ? '' : ` · ${L.target} nm`}</span>
         <span>${L.free ? '' : best[L.id] != null ? starStr(stars(best[L.id])) : ''}</span></button>`;
     }).join('');
-    card(`<h2>Orders</h2>${rows}<p class="small" style="margin-top:14px">Also try <a href="../">Gyro</a> and <a href="../laser/">Laser Lab</a>.</p>`);
+    card(`<h2>Orders</h2>${rows}<p class="small" style="margin-top:14px">Also try <a href="../">Gyro</a>, <a href="../laser/">Laser Lab</a> and <a href="../bio/">Lacto Works</a>.</p>`);
     for (const b of document.querySelectorAll('.lvl')) b.onclick = () => loadLevel(+b.dataset.i);
   };
 

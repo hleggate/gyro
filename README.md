@@ -26,3 +26,10 @@ Grow CdSe quantum dots by hot injection and fill orders for exact emission colou
 
 - `qdots/qd.js`: nucleation, growth and spectrum model
 - `qdots/index.html`: flask, spectrum and orders
+
+## Lacto Works (`bio/`)
+
+Run a 2 L stirred-tank bioreactor growing *Lactobacillus casei* on glucose, and fill orders for live cultures and lactic acid. Growth is Monod kinetics with a Baranyi lag phase, slowed by substrate and lactic acid inhibition, a cardinal temperature model (optimum 38 °C, death above ~44 °C) and a cardinal pH model. Lactic acid comes from growth plus a non-growth term (Luedeking–Piret). The pH is solved from a charge balance of lactic acid, the medium's buffers and the NaOH added by the pH-stat; a bromocresol purple tint shows it in the broth. Cells die in acid below pH ~4.4 and when the glucose runs out, so harvest timing matters. The feed (600 g/L glucose) and base both add volume, and the vessel only holds 2 L. Four orders (starter culture, probiotic capsules, high-density fed-batch, a lactic acid titre for PLA) plus free play.
+
+- `bio/ferment.js`: growth, acid production, death and pH model
+- `bio/index.html`: reactor, growth chart and orders
